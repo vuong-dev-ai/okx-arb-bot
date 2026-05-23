@@ -1,0 +1,29 @@
+# API credentials - KHÔNG BAO GIỜ commit file này
+test.env
+*.env
+.env
+
+# Excel log (dữ liệu cá nhân)
+pnl_log.xlsx
+
+# Bot log
+bot.log
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

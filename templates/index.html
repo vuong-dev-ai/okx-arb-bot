@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OKX Funding Arb Bot</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #0d1117;
+  color: #c9d1d9;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  min-height: 100vh;
+}
+
+/* ── Header ─────────────────────────────── */
+.header {
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  padding: 14px 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.header-left { display: flex; align-items: center; gap: 14px; }
+.logo { font-size: 18px; font-weight: 700; color: #58a6ff; letter-spacing: -0.3px; }
+.logo span { color: #3fb950; }
+
+.badge {
+  padding: 3px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.badge-run { background: #1b3a20; color: #3fb950; }
+.badge-off { background: #3d1414; color: #f85149; }
+
+.header-right { display: flex; align-items: center; gap: 10px; }
+.upd-time { color: #8b949e; font-size: 12px; }
+
+/* ── Buttons ─────────────────────────────── */
+.btn {
+  border: none;
+  padding: 8px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: opacity .15s;
+}
+.btn:hover { opacity: .85; }
+.btn-green  { background: #238636; color: #fff; }
+.btn-red    { background: #b62324; color: #fff; }
+.btn-gray   { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; padding: 5px 14px; font-size: 12px; }
+.btn-mini   { background: #30363d; color: #c9d1d9; border: none; padding: 3px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; }
+.btn-mini:hover { background: #b62324; color: #fff; }
+
+/* ── Layout ─────────────────────────────── */
+.main { max-width: 1440px; margin: 0 auto; padding: 20px 24px; display: grid; gap: 16px; }
+
+/* ── Cards ─────────────────────────────── */
+.card {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+}
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid #21262d;
+}
+.card-title { font-weight: 600; font-size: 13px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.06em; }
+.card-body { padding: 18px; }
+
+/* ── Stat Cards ─────────────────────────── */
+.stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.stat-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 18px; }
+.stat-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+.stat-value { font-size: 28px; font-weight: 700; line-height: 1; }
+.stat-sub { font-size: 12px; color: #8b949e; margin-top: 4px; }
+
+/* ── Tables ─────────────────────────────── */
+.tbl { width: 100%; border-collapse: collapse; }
+.tbl th {
+  color: #8b949e;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 8px 14px;
+  border-bottom: 1px solid #21262d;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tbl td {
+  padding: 10px 14px;
+  border-bottom: 1px solid #21262d;
+  white-space: nowrap;
+}
+.tbl tr:last-child td { border-bottom: none; }
+.tbl tbody tr:hover { background: rgba(88,166,255,.04); }
+.tbl-empty { text-align: center; color: #8b949e; padding: 28px !important; }
+
+/* ── Colors ─────────────────────────────── */
+.green  { color: #3fb950; }
+.red    { color: #f85149; }
+.muted  { color: #8b949e; }
+.blue   { color: #58a6ff; }
+.yellow { color: #e3b341; }
+
+/* ── Log ─────────────────────────────────── */
+.log-box {
+  background: #010409;
+  border-radius: 6px;
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  font-size: 12px;
+  height: 220px;
+  overflow-y: auto;
+  padding: 12px 14px;
+  line-height: 1.6;
+}
+.log-line { padding: 1px 0; }
+.log-ok   { color: #3fb950; }
+.log-err  { color: #f85149; }
+.log-warn { color: #e3b341; }
+.log-info { color: #c9d1d9; }
+.log-sep  { color: #8b949e; }
+
+/* ── Scrollbar ───────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: #161b22; }
+::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+
+/* ── Pulse animation ─────────────────────── */
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+.pulse { animation: pulse 1.8s ease-in-out infinite; }
+
+/* ── Mid row ─────────────────────────────── */
+.mid-row { display: grid; grid-template-columns: 3fr 2fr; gap: 16px; }
+
+/* ── History row ─────────────────────────── */
+.hist-inner { display: grid; grid-template-columns: 1fr 1.4fr; gap: 20px; align-items: start; }
+.hist-table-wrap { overflow: auto; max-height: 300px; }
+.chart-wrap { position: relative; height: 280px; }
+
+/* ── Exit badge ──────────────────────────── */
+.exit-badge {
+  background: #3d1414;
+  color: #f85149;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-left: 6px;
+  font-weight: 700;
+}
+
+/* ── Tooltip-like sign ───────────────────── */
+.sign { font-size: 11px; }
+</style>
+</head>
+<body>
+
+<!-- ══ HEADER ══════════════════════════════════════════════════════ -->
+<div class="header">
+  <div class="header-left">
+    <span class="logo">⬡ OKX <span>Funding</span> Arb</span>
+    <span id="status-badge" class="badge badge-off">● STOPPED</span>
+  </div>
+  <div class="header-right">
+    <span class="upd-time">Cập nhật: <span id="last-update">-</span></span>
+    <button id="btn-start" class="btn btn-green" onclick="startBot()">▶ Khởi động Bot</button>
+    <button id="btn-stop"  class="btn btn-red"   onclick="stopBot()" style="display:none">⏹ Dừng Bot</button>
+  </div>
+</div>
+
+<!-- ══ MAIN ════════════════════════════════════════════════════════ -->
+<div class="main">
+
+  <!-- Stats row -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-label">Số dư USDT</div>
+      <div class="stat-value blue" id="s-usdt">$0.00</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Vị thế đang mở</div>
+      <div class="stat-value" id="s-pos">0 / 3</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Tổng PnL hiện tại</div>
+      <div class="stat-value" id="s-pnl">$0.0000</div>
+      <div class="stat-sub" id="s-pnl-funding" style="margin-top:6px">Funding: $0 | Giá: $0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">% Lãi tổng</div>
+      <div class="stat-value" id="s-pct">0.000%</div>
+      <div class="stat-sub" id="s-npay" style="margin-top:6px">Số lần nhận funding: 0</div>
+    </div>
+  </div>
+
+  <!-- Mid: positions + opportunities -->
+  <div class="mid-row">
+
+    <!-- Positions -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Vị thế đang mở</span>
+        <span class="muted" style="font-size:11px" id="pos-refresh-ts"></span>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th style="text-align:left">Coin</th>
+              <th style="text-align:right">Giá vào</th>
+              <th style="text-align:right">Giá hiện tại</th>
+              <th style="text-align:right">Vốn ($)</th>
+              <th style="text-align:right">Funding PnL</th>
+              <th style="text-align:right">Giá PnL</th>
+              <th style="text-align:right">Tổng PnL</th>
+              <th style="text-align:right">%</th>
+              <th style="text-align:right">Mở lúc</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="pos-tbody">
+            <tr><td colspan="10" class="tbl-empty">Chưa có vị thế nào đang mở</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Funding rates -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Top Funding Rates</span>
+        <span class="muted sign">MIN: 0.0100%/8h</span>
+      </div>
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th style="text-align:left">Coin</th>
+            <th style="text-align:right">Rate/8h</th>
+            <th style="text-align:right">APY</th>
+            <th style="text-align:right">Next</th>
+          </tr>
+        </thead>
+        <tbody id="opps-tbody">
+          <tr><td colspan="4" class="tbl-empty">Chưa có dữ liệu scan</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- PnL History -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Lịch sử Lời / Lỗ (Excel)</span>
+      <button class="btn btn-gray" onclick="loadHistory()">↻ Tải lại</button>
+    </div>
+    <div class="card-body">
+      <div class="hist-inner">
+        <div class="hist-table-wrap">
+          <table class="tbl" style="font-size:12px;">
+            <thead id="hist-thead"></thead>
+            <tbody id="hist-tbody">
+              <tr><td class="tbl-empty">Chưa có dữ liệu Excel</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="pnl-chart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Log -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Log Console</span>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#8b949e;cursor:pointer;">
+        <input type="checkbox" id="auto-scroll" checked> Auto-scroll
+      </label>
+    </div>
+    <div class="card-body" style="padding:12px 18px;">
+      <div class="log-box" id="log-box"></div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<script>
+let pnlChart = null;
+const MIN_RATE = 0.0001;
+
+// ══ Fetch & Update ════════════════════════════════════════════════
+
+async function fetchStatus() {
+  try {
+    const r = await fetch('/api/status');
+    const d = await r.json();
+    updateDashboard(d);
+  } catch(e) { console.warn('status error', e); }
+}
+
+function updateDashboard(d) {
+  // Header
+  const badge = document.getElementById('status-badge');
+  if (d.running) {
+    badge.className = 'badge badge-run';
+    badge.innerHTML = '<span class="pulse">●</span> RUNNING';
+    document.getElementById('btn-start').style.display = 'none';
+    document.getElementById('btn-stop').style.display  = '';
+  } else {
+    badge.className = 'badge badge-off';
+    badge.textContent = '● STOPPED';
+    document.getElementById('btn-start').style.display = '';
+    document.getElementById('btn-stop').style.display  = 'none';
+  }
+  document.getElementById('last-update').textContent = d.last_update || '-';
+
+  // Stats
+  document.getElementById('s-usdt').textContent = '$' + fmtN(d.usdt, 2);
+
+  const ps        = d.positions || [];
+  const totalPnl  = ps.reduce((s, p) => s + (p.total_pnl || 0), 0);
+  const fundPnl   = ps.reduce((s, p) => s + (p.funding_pnl || 0), 0);
+  const pricePnl  = ps.reduce((s, p) => s + (p.price_pnl || 0), 0);
+  const totalIn   = ps.reduce((s, p) => s + (p.usdt_in || 0), 0);
+  const totalPct  = totalIn > 0 ? (totalPnl / totalIn * 100) : 0;
+  const totalNPay = ps.reduce((s, p) => s + (p.n_pay || 0), 0);
+
+  document.getElementById('s-pos').textContent = ps.length + ' / 3';
+
+  const pnlEl = document.getElementById('s-pnl');
+  pnlEl.textContent = sign(totalPnl) + '$' + fmtN(Math.abs(totalPnl), 4);
+  pnlEl.className   = 'stat-value ' + cls(totalPnl);
+
+  document.getElementById('s-pnl-funding').innerHTML =
+    `<span class="${cls(fundPnl)}">Funding: ${sign(fundPnl)}$${fmtN(Math.abs(fundPnl),4)}</span>` +
+    `  |  <span class="${cls(pricePnl)}">Giá: ${sign(pricePnl)}$${fmtN(Math.abs(pricePnl),4)}</span>`;
+
+  const pctEl = document.getElementById('s-pct');
+  pctEl.textContent = sign(totalPct) + fmtN(Math.abs(totalPct), 3) + '%';
+  pctEl.className   = 'stat-value ' + cls(totalPct);
+
+  document.getElementById('s-npay').textContent = `Số lần nhận funding: ${totalNPay}`;
+
+  // Positions table
+  const tbody = document.getElementById('pos-tbody');
+  if (!ps.length) {
+    tbody.innerHTML = '<tr><td colspan="10" class="tbl-empty">Chưa có vị thế nào đang mở</td></tr>';
+  } else {
+    tbody.innerHTML = ps.map(p => {
+      const exitTag = p.exit ? '<span class="exit-badge">⚠ EXIT</span>' : '';
+      const rowBg   = p.exit ? 'background:rgba(248,81,73,.06)' : '';
+      const cp      = p.cur_price ? '$' + fmtN(p.cur_price, 2) : '<span class="muted">-</span>';
+      const diff    = p.cur_price ? ((p.cur_price - p.entry_price) / p.entry_price * 100) : null;
+      const diffStr = diff !== null
+        ? `<br><span class="muted sign">${sign(diff)}${fmtN(Math.abs(diff),2)}%</span>` : '';
+      return `<tr style="${rowBg}">
+        <td><strong>${p.coin}</strong>${exitTag}</td>
+        <td style="text-align:right">$${fmtN(p.entry_price, 2)}</td>
+        <td style="text-align:right">${cp}${diffStr}</td>
+        <td style="text-align:right">$${fmtN(p.usdt_in, 2)}</td>
+        <td style="text-align:right" class="${cls(p.funding_pnl)}">${sign(p.funding_pnl)}$${fmtN(Math.abs(p.funding_pnl),4)}</td>
+        <td style="text-align:right" class="${cls(p.price_pnl)}">${sign(p.price_pnl)}$${fmtN(Math.abs(p.price_pnl),4)}</td>
+        <td style="text-align:right" class="${cls(p.total_pnl)}"><strong>${sign(p.total_pnl)}$${fmtN(Math.abs(p.total_pnl),4)}</strong></td>
+        <td style="text-align:right" class="${cls(p.pct)}">${sign(p.pct)}${fmtN(Math.abs(p.pct),3)}%</td>
+        <td style="text-align:right" class="muted" style="font-size:11px">${p.open_time}</td>
+        <td><button class="btn-mini" onclick="closePos('${p.coin}')">Đóng</button></td>
+      </tr>`;
+    }).join('');
+    document.getElementById('pos-refresh-ts').textContent = 'Cập nhật ' + (d.last_update || '-');
+  }
+
+  // Opportunities
+  const otbody = document.getElementById('opps-tbody');
+  const opps   = d.opps || [];
+  if (!opps.length) {
+    otbody.innerHTML = '<tr><td colspan="4" class="tbl-empty">Chưa có dữ liệu scan</td></tr>';
+  } else {
+    otbody.innerHTML = opps.map(o => {
+      const above = o.rate >= MIN_RATE;
+      const rCls  = above ? 'green' : 'muted';
+      return `<tr>
+        <td class="${rCls}" style="font-weight:${above?700:400}">${above ? '► ' : '  '}${o.coin}</td>
+        <td style="text-align:right" class="${rCls}">${fmtR(o.rate)}%</td>
+        <td style="text-align:right" class="muted">${fmtN(o.apy,1)}%</td>
+        <td style="text-align:right" class="muted">${fmtR(o.next)}%</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Log
+  renderLog(d.logs || []);
+}
+
+function renderLog(lines) {
+  const box  = document.getElementById('log-box');
+  const auto = document.getElementById('auto-scroll').checked;
+  box.innerHTML = lines.map(l => {
+    let c = 'log-info';
+    if (l.includes('✓'))                          c = 'log-ok';
+    else if (l.includes('Lỗi') || l.includes('âm') || l.includes('THẤT BẠI')) c = 'log-err';
+    else if (l.includes('Cảnh') || l.includes('thấp')) c = 'log-warn';
+    else if (l.includes('━━'))                    c = 'log-sep';
+    return `<div class="log-line ${c}">${esc(l)}</div>`;
+  }).join('');
+  if (auto) box.scrollTop = box.scrollHeight;
+}
+
+// ══ PnL History ════════════════════════════════════════════════════
+
+async function loadHistory() {
+  try {
+    const r = await fetch('/api/pnl-history');
+    const d = await r.json();
+    renderHistory(d);
+  } catch(e) { console.warn('history error', e); }
+}
+
+function renderHistory(d) {
+  const thead = document.getElementById('hist-thead');
+  const tbody = document.getElementById('hist-tbody');
+
+  if (!d.rows || d.rows.length === 0) {
+    thead.innerHTML = '';
+    tbody.innerHTML = '<tr><td class="tbl-empty">Chưa có dữ liệu Excel (pnl_log.xlsx)</td></tr>';
+    return;
+  }
+
+  const hdrs = d.headers || [];
+  thead.innerHTML = '<tr>' + hdrs.map(h =>
+    `<th style="text-align:${['Thời gian','Coin'].includes(h) ? 'left' : 'right'}">${h}</th>`
+  ).join('') + '</tr>';
+
+  const PNL_COLS = ['Funding PnL ($)', 'Giá PnL ($)', 'Tổng PnL ($)', '% Lãi'];
+
+  tbody.innerHTML = d.rows.map(row => {
+    const coin = row[hdrs.indexOf('Coin')] || '';
+    const isSum = coin === 'TỔNG';
+    const rowStyle = isSum ? 'background:rgba(88,166,255,.05);font-weight:600' : '';
+    return '<tr style="' + rowStyle + '">' + row.map((v, i) => {
+      const h     = hdrs[i];
+      const align = ['Thời gian','Coin'].includes(h) ? 'left' : 'right';
+      const isPnl = PNL_COLS.includes(h);
+      const num   = parseFloat(v);
+      const c     = isPnl && !isNaN(num) ? cls(num) : '';
+      return `<td style="text-align:${align}" class="${c}">${esc(v ?? '')}</td>`;
+    }).join('') + '</tr>';
+  }).join('');
+
+  renderChart(d);
+}
+
+function renderChart(d) {
+  const hdrs    = d.headers || [];
+  const pnlI    = hdrs.indexOf('Tổng PnL ($)');
+  const timeI   = hdrs.indexOf('Thời gian');
+  const coinI   = hdrs.indexOf('Coin');
+  if (pnlI < 0) return;
+
+  // Use TỔNG rows if available, else all non-empty rows
+  let pts = d.rows.filter(r => r[coinI] === 'TỔNG');
+  if (!pts.length) {
+    pts = d.rows.filter(r => r[coinI] && r[coinI] !== 'TỔNG' && r[pnlI] !== '');
+  }
+
+  // Cumulative PnL
+  let cum = 0;
+  const labels = [], data = [];
+  pts.forEach(r => {
+    cum += parseFloat(r[pnlI]) || 0;
+    labels.push(r[timeI] || '');
+    data.push(parseFloat(cum.toFixed(4)));
+  });
+
+  const ctx = document.getElementById('pnl-chart').getContext('2d');
+  if (pnlChart) pnlChart.destroy();
+
+  const ptColors = data.map(v => v >= 0 ? '#3fb950' : '#f85149');
+
+  pnlChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'PnL tích lũy ($)',
+        data,
+        borderColor: '#58a6ff',
+        backgroundColor: 'rgba(88,166,255,0.08)',
+        fill: true,
+        tension: 0.35,
+        pointRadius: 5,
+        pointBackgroundColor: ptColors,
+        pointBorderColor: ptColors,
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#8b949e', font: { size: 12 } } },
+        tooltip: {
+          backgroundColor: '#161b22',
+          borderColor: '#30363d',
+          borderWidth: 1,
+          titleColor: '#c9d1d9',
+          bodyColor: '#8b949e',
+          callbacks: {
+            label: ctx => {
+              const v = ctx.parsed.y;
+              return `  PnL: ${v >= 0 ? '+' : ''}$${v.toFixed(4)}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#8b949e', maxTicksLimit: 8, font: { size: 11 } },
+          grid:  { color: '#21262d' }
+        },
+        y: {
+          ticks: {
+            color: '#8b949e',
+            font: { size: 11 },
+            callback: v => (v >= 0 ? '+' : '') + '$' + v.toFixed(2)
+          },
+          grid: { color: '#21262d' }
+        }
+      }
+    }
+  });
+}
+
+// ══ Controls ═══════════════════════════════════════════════════════
+
+async function startBot() {
+  document.getElementById('btn-start').disabled = true;
+  const r = await fetch('/api/start', { method: 'POST' });
+  const d = await r.json();
+  if (!d.ok) { alert(d.msg); document.getElementById('btn-start').disabled = false; }
+  else fetchStatus();
+}
+
+async function stopBot() {
+  if (!confirm('Dừng bot?\nBot sẽ tự động đóng tất cả vị thế đang mở.')) return;
+  await fetch('/api/stop', { method: 'POST' });
+  fetchStatus();
+}
+
+async function closePos(coin) {
+  if (!confirm(`Đóng vị thế ${coin}?`)) return;
+  await fetch(`/api/close/${coin}`, { method: 'POST' });
+  setTimeout(fetchStatus, 1500);
+}
+
+// ══ Helpers ════════════════════════════════════════════════════════
+
+function fmtN(n, dec) { return (n ?? 0).toFixed(dec); }
+function fmtR(r)      { return (r * 100).toFixed(4); }
+function sign(v)      { return v >= 0 ? '+' : '-'; }
+function cls(v)       { return v >= 0 ? 'green' : 'red'; }
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ══ Init ═══════════════════════════════════════════════════════════
+
+fetchStatus();
+loadHistory();
+setInterval(fetchStatus,  5000);
+setInterval(loadHistory,  60000);
+</script>
+</body>
+</html>
