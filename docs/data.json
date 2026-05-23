@@ -1,16 +1,16 @@
 {
-  "updated_at": "24/05/2026 01:08",
+  "updated_at": "24/05/2026 01:13",
   "usdt_balance": 12193.482092859196,
-  "total_live_pnl": 1.52,
+  "total_live_pnl": 1.5227,
   "positions": [
     {
       "coin": "BTC",
       "entry_price": 75489.4,
-      "current_price": 75552.0,
+      "current_price": 75629.2,
       "usdt_in": 10470.38,
-      "funding_pnl": 1.0479,
+      "funding_pnl": 1.049,
       "price_pnl": -0.0,
-      "total_pnl": 1.0479,
+      "total_pnl": 1.049,
       "pct": 0.01,
       "n_payments": 1,
       "open_time": "23/05 13:17"
@@ -20,9 +20,9 @@
       "entry_price": 0.1,
       "current_price": 0.1,
       "usdt_in": 4699.53,
-      "funding_pnl": 0.472,
+      "funding_pnl": 0.4737,
       "price_pnl": 0.0,
-      "total_pnl": 0.472,
+      "total_pnl": 0.4737,
       "pct": 0.01,
       "n_payments": 1,
       "open_time": "23/05 13:17"
