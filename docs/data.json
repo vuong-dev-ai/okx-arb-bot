@@ -1,12 +1,12 @@
 {
-  "updated_at": "23/05/2026 15:18",
+  "updated_at": "23/05/2026 15:23",
   "usdt_balance": 10496.504021268642,
   "total_live_pnl": 0.0,
   "positions": [
     {
       "coin": "BTC",
       "entry_price": 75489.4,
-      "current_price": 74725.1,
+      "current_price": 74658.7,
       "usdt_in": 10470.38,
       "funding_pnl": 0.0,
       "price_pnl": 0.0,
@@ -18,7 +18,7 @@
     {
       "coin": "XRP",
       "entry_price": 1.33,
-      "current_price": 1.32,
+      "current_price": 1.31,
       "usdt_in": 7015.75,
       "funding_pnl": 0.0,
       "price_pnl": 0.0,
