@@ -1,29 +1,17 @@
 {
-  "updated_at": "23/05/2026 17:39",
-  "usdt_balance": 10496.504021268642,
+  "updated_at": "23/05/2026 17:44",
+  "usdt_balance": 18199.546199689197,
   "total_live_pnl": 0.0,
   "positions": [
     {
       "coin": "BTC",
       "entry_price": 75489.4,
-      "current_price": 74767.7,
+      "current_price": 74755.8,
       "usdt_in": 10470.38,
       "funding_pnl": 0.0,
       "price_pnl": 0.0,
       "total_pnl": 0.0,
       "pct": 0.0,
-      "n_payments": 0,
-      "open_time": "23/05 13:17"
-    },
-    {
-      "coin": "XRP",
-      "entry_price": 1.33,
-      "current_price": 1.32,
-      "usdt_in": 7015.75,
-      "funding_pnl": 0.0,
-      "price_pnl": -0.0,
-      "total_pnl": -0.0,
-      "pct": -0.0,
       "n_payments": 0,
       "open_time": "23/05 13:17"
     },
@@ -38,21 +26,21 @@
       "pct": 0.0,
       "n_payments": 0,
       "open_time": "23/05 13:17"
+    },
+    {
+      "coin": "ADA",
+      "entry_price": 0.24,
+      "current_price": 0.24,
+      "usdt_in": 5459.64,
+      "funding_pnl": 0.0,
+      "price_pnl": 0.0,
+      "total_pnl": 0.0,
+      "pct": 0.0,
+      "n_payments": 0,
+      "open_time": "23/05 17:44"
     }
   ],
   "top_rates": [
-    {
-      "coin": "BTC",
-      "rate": 0.0001,
-      "apy": 10.950000000000001,
-      "next": 0.0
-    },
-    {
-      "coin": "XRP",
-      "rate": 0.0001,
-      "apy": 10.950000000000001,
-      "next": 0.0
-    },
     {
       "coin": "DOGE",
       "rate": 0.0001,
@@ -66,13 +54,13 @@
       "next": 0.0
     },
     {
-      "coin": "OP",
+      "coin": "ARB",
       "rate": 0.0001,
       "apy": 10.950000000000001,
       "next": 0.0
     },
     {
-      "coin": "SUI",
+      "coin": "OP",
       "rate": 0.0001,
       "apy": 10.950000000000001,
       "next": 0.0
@@ -87,6 +75,18 @@
       "coin": "LTC",
       "rate": 0.0001,
       "apy": 10.950000000000001,
+      "next": 0.0
+    },
+    {
+      "coin": "BCH",
+      "rate": 0.0001,
+      "apy": 10.950000000000001,
+      "next": 0.0
+    },
+    {
+      "coin": "BTC",
+      "rate": 9.96032629379e-05,
+      "apy": 10.90655729170005,
       "next": 0.0
     }
   ],
