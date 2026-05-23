@@ -1,9 +1,186 @@
 {
-  "updated_at": "—",
-  "total_periods": 0,
-  "total_pnl": 0,
-  "last_balance": "—",
-  "headers": [],
-  "rows": [],
-  "chart": {"labels": [], "values": []}
+  "updated_at": "23/05/2026 12:39",
+  "usdt_balance": 34978.92383688348,
+  "total_live_pnl": 0.0,
+  "positions": [
+    {
+      "coin": "BTC",
+      "entry_price": 75493.4,
+      "current_price": 75490.6,
+      "usdt_in": 10493.58,
+      "funding_pnl": 0.0,
+      "price_pnl": 0.0,
+      "total_pnl": 0.0,
+      "pct": 0.0,
+      "n_payments": 0,
+      "open_time": "23/05 12:39"
+    },
+    {
+      "coin": "XRP",
+      "entry_price": 1.33,
+      "current_price": 1.33,
+      "usdt_in": 7028.74,
+      "funding_pnl": 0.0,
+      "price_pnl": 0.0,
+      "total_pnl": 0.0,
+      "pct": 0.0,
+      "n_payments": 0,
+      "open_time": "23/05 12:39"
+    },
+    {
+      "coin": "DOGE",
+      "entry_price": 0.1,
+      "current_price": 0.1,
+      "usdt_in": 4709.02,
+      "funding_pnl": 0.0,
+      "price_pnl": 0.0,
+      "total_pnl": 0.0,
+      "pct": 0.0,
+      "n_payments": 0,
+      "open_time": "23/05 12:39"
+    }
+  ],
+  "top_rates": [
+    {
+      "coin": "BTC",
+      "rate": 0.0001,
+      "apy": 10.950000000000001,
+      "next": 0.0
+    },
+    {
+      "coin": "XRP",
+      "rate": 0.0001,
+      "apy": 10.950000000000001,
+      "next": 0.0
+    },
+    {
+      "coin": "DOGE",
+      "rate": 0.0001,
+      "apy": 10.950000000000001,
+      "next": 0.0
+    },
+    {
+      "coin": "ADA",
+      "rate": 0.0001,
+      "apy": 10.950000000000001,
+      "next": 0.0
+    },
+    {
+      "coin": "OP",
+      "rate": 0.0001,
+      "apy": 10.950000000000001,
+      "next": 0.0
+    },
+    {
+      "coin": "SUI",
+      "rate": 0.0001,
+      "apy": 10.950000000000001,
+      "next": 0.0
+    },
+    {
+      "coin": "TRX",
+      "rate": 0.0001,
+      "apy": 10.950000000000001,
+      "next": 0.0
+    },
+    {
+      "coin": "LTC",
+      "rate": 0.0001,
+      "apy": 10.950000000000001,
+      "next": 0.0
+    }
+  ],
+  "history": {
+    "headers": [
+      "Thời gian",
+      "Coin",
+      "Giá vào ($)",
+      "Giá hiện tại ($)",
+      "Vốn vào ($)",
+      "Funding PnL ($)",
+      "Giá PnL ($)",
+      "Tổng PnL ($)",
+      "% Lãi",
+      "Số lần nhận funding",
+      "Số dư USDT ($)"
+    ],
+    "rows": [
+      [
+        "23/05/2026 10:36",
+        "BTC",
+        "65000",
+        "66000",
+        "650",
+        "1.32",
+        "0.5",
+        "1.82",
+        "0.28",
+        "1",
+        "350.5"
+      ],
+      [
+        "23/05/2026 12:39",
+        "BTC",
+        "75493.4",
+        "75490.6",
+        "10493.58",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        ""
+      ],
+      [
+        "23/05/2026 12:39",
+        "XRP",
+        "1.3312",
+        "1.3308",
+        "7028.74",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        ""
+      ],
+      [
+        "23/05/2026 12:39",
+        "DOGE",
+        "0.1014",
+        "0.1016",
+        "4709.02",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "34978.92"
+      ],
+      [
+        "23/05/2026 12:39",
+        "TỔNG",
+        "",
+        "",
+        "22231.33",
+        "",
+        "",
+        "0",
+        "0",
+        "",
+        "34978.92"
+      ]
+    ],
+    "chart": {
+      "labels": [
+        "23/05/2026 12:39"
+      ],
+      "values": [
+        0.0
+      ]
+    },
+    "last_balance": "34978.92",
+    "total_periods": 1,
+    "total_pnl": 0.0
+  }
 }
