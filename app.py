@@ -16,20 +16,21 @@ app = Flask(__name__)
 
 _lock  = threading.Lock()
 _state = {
-    'running': False,
-    'positions': [],
+    'running':       False,
+    'positions':     [],
     'opportunities': [],
-    'usdt': 0.0,
-    'log': [],
-    'last_update': '-',
+    'usdt':          0.0,
+    'log':           [],
+    'last_update':   '-',
 }
 
-MAX_POS  = 3
-SCAN_INT = 300
-MON_INT  = 30
-EXCL_INT = 8 * 3600
-TICK     = 5
-MAX_LOG  = 300
+MAX_POS   = 3
+SCAN_INT  = 300      # scan funding rate mỗi 5 phút
+MON_INT   = 30       # cập nhật PnL mỗi 30 giây
+EXCL_INT  = 8*3600   # ghi Excel mỗi 8 giờ
+PUSH_INT  = 300      # push GitHub Pages mỗi 5 phút
+TICK      = 5        # vòng lặp chính mỗi 5 giây (để dừng nhanh)
+MAX_LOG   = 300
 _bot_thread = None
 
 
@@ -42,11 +43,13 @@ def _log(msg: str):
 
 
 def _bot():
-    last_scan = last_mon = last_excel = 0
+    last_scan = last_mon = last_excel = last_push = 0
+    last_opps: list = []
+
     _log("━━━ Bot OKX Funding Arb khởi động ━━━")
     with _lock:
         _state['usdt'] = get_available_usdt()
-    _log(f"Số dư ban đầu: ${_state['usdt']:.2f} USDT")
+    _log(f"Số dư: ${_state['usdt']:.2f} USDT")
 
     while True:
         with _lock:
@@ -63,7 +66,6 @@ def _bot():
                 try:
                     p['_pnl']  = estimate_pnl(p)
                     ok, rate   = check_exit_conditions(p)
-                    p['_rate'] = rate
                     p['_exit'] = ok
                 except Exception as e:
                     _log(f"[{p['coin']}] Lỗi cập nhật: {e}")
@@ -75,12 +77,12 @@ def _bot():
                     with _lock:
                         _state['positions'] = [x for x in _state['positions']
                                                if x['coin'] != p['coin']]
-                    _log(f"[{p['coin']}] Đóng thành công ✓")
+                    _log(f"[{p['coin']}] Đóng ✓")
                 except Exception as e:
                     _log(f"[{p['coin']}] Lỗi đóng: {e}")
 
             with _lock:
-                _state['usdt'] = get_available_usdt()
+                _state['usdt']        = get_available_usdt()
                 _state['last_update'] = datetime.now().strftime('%H:%M:%S')
             last_mon = now
 
@@ -92,13 +94,13 @@ def _bot():
             if n_pos < MAX_POS:
                 _log(f"SCAN — ${_state['usdt']:.2f} USDT  |  {datetime.now().strftime('%H:%M')}")
                 opps = get_funding_rates()
+                last_opps = opps or []
                 with _lock:
-                    _state['opportunities'] = opps[:10] if opps else []
+                    _state['opportunities'] = last_opps[:10]
 
                 if opps:
                     with _lock:
                         open_coins = {p['coin'] for p in _state['positions']}
-
                     for opp in opps:
                         with _lock:
                             n_pos = len(_state['positions'])
@@ -109,50 +111,58 @@ def _bot():
                             continue
                         if opp['funding_rate'] < MIN_FUNDING_RATE:
                             break
-
                         usdt   = get_available_usdt()
                         amount = usdt * POSITION_PCT
                         if amount < MIN_USDT:
                             _log(f"Số dư thấp (${usdt:.2f}) — dừng scan")
                             break
-
                         _log(f"[{opp['coin']}] Vào lệnh ${amount:.2f} @ {opp['funding_rate']*100:.4f}%/8h")
                         pos = open_position(opp, amount)
                         if pos:
                             with _lock:
                                 _state['positions'].append(pos)
                             open_coins.add(opp['coin'])
-                            _log(f"[{opp['coin']}] Mở thành công ✓  giá=${pos['entry_price']:.2f}")
+                            _log(f"[{opp['coin']}] Mở ✓ giá=${pos['entry_price']:.2f}")
                 else:
-                    _log("Không lấy được dữ liệu funding rate")
-
+                    _log("Không lấy được funding rate")
             last_scan = now
 
         # ── Ghi Excel mỗi 8 giờ ──────────────────────────────────
         if now - last_excel >= EXCL_INT:
             with _lock:
                 ps = list(_state['positions'])
+                u  = _state['usdt']
             if ps:
-                pnl_list = [estimate_pnl(p) for p in ps]
+                pl = [estimate_pnl(p) for p in ps]
                 try:
-                    log_pnl_snapshot(ps, pnl_list, get_available_usdt())
-                    _log("Đã ghi lời/lỗ → pnl_log.xlsx ✓")
-                    export_json()
-                    if push_to_github():
-                        _log("data.json → GitHub Pages ✓")
-                    else:
-                        _log("Push GitHub thất bại — kiểm tra git credentials")
+                    log_pnl_snapshot(ps, pl, u)
+                    _log("Ghi Excel ✓ → pnl_log.xlsx")
                 except Exception as e:
                     _log(f"Lỗi ghi Excel: {e}")
             last_excel = now
 
+        # ── Push GitHub Pages mỗi 5 phút ─────────────────────────
+        if now - last_push >= PUSH_INT:
+            with _lock:
+                ps = list(_state['positions'])
+                u  = _state['usdt']
+            try:
+                pl = [p.get('_pnl') or estimate_pnl(p) for p in ps]
+                export_json({'positions': ps, 'pnl_list': pl,
+                             'opportunities': last_opps, 'usdt': u})
+                if push_to_github():
+                    _log("GitHub Pages ✓ (data.json)")
+            except Exception as e:
+                _log(f"Lỗi push GitHub: {e}")
+            last_push = now
+
         time.sleep(TICK)
 
-    # ── Đóng tất cả vị thế khi dừng ──────────────────────────────
+    # ── Đóng tất cả khi dừng ─────────────────────────────────────
     with _lock:
         ps = list(_state['positions'])
     if ps:
-        _log(f"Đóng {len(ps)} vị thế đang mở...")
+        _log(f"Đóng {len(ps)} vị thế...")
         for p in ps:
             try:
                 close_position(p)
@@ -161,7 +171,7 @@ def _bot():
                                            if x['coin'] != p['coin']]
                 _log(f"[{p['coin']}] Đóng ✓")
             except Exception as e:
-                _log(f"[{p['coin']}] Lỗi đóng: {e}")
+                _log(f"[{p['coin']}] Lỗi: {e}")
     _log("━━━ Bot đã dừng ━━━")
 
 
@@ -197,13 +207,10 @@ def api_status():
         })
 
     return jsonify({
-        'running':     running,
-        'usdt':        usdt,
-        'positions':   out_ps,
-        'opps':        [{'coin': o['coin'], 'rate': o['funding_rate'],
-                         'apy': o['annualized'], 'next': o['next_rate']} for o in opps],
-        'logs':        logs,
-        'last_update': upd,
+        'running': running, 'usdt': usdt, 'positions': out_ps,
+        'opps':    [{'coin': o['coin'], 'rate': o['funding_rate'],
+                     'apy': o['annualized'], 'next': o['next_rate']} for o in opps],
+        'logs': logs, 'last_update': upd,
     })
 
 
@@ -233,29 +240,28 @@ def api_close(coin):
     with _lock:
         pos = next((p for p in _state['positions'] if p['coin'] == coin), None)
     if not pos:
-        return jsonify({'ok': False, 'msg': f'Không tìm thấy vị thế {coin}'})
+        return jsonify({'ok': False, 'msg': f'Không tìm thấy {coin}'})
 
     def _do():
         _log(f"[{coin}] Đóng thủ công...")
         try:
             close_position(pos)
             with _lock:
-                _state['positions'] = [p for p in _state['positions']
-                                       if p['coin'] != coin]
+                _state['positions'] = [p for p in _state['positions'] if p['coin'] != coin]
             _log(f"[{coin}] Đóng thủ công ✓")
         except Exception as e:
             _log(f"[{coin}] Lỗi: {e}")
-
     threading.Thread(target=_do, daemon=True).start()
     return jsonify({'ok': True})
 
 
 @app.route('/api/pnl-history')
 def api_pnl():
-    if not os.path.exists(EXCEL_FILE):
+    excel_path = os.path.join(os.path.dirname(__file__), EXCEL_FILE)
+    if not os.path.exists(excel_path):
         return jsonify({'headers': [], 'rows': []})
     try:
-        wb   = openpyxl.load_workbook(EXCEL_FILE, data_only=True)
+        wb   = openpyxl.load_workbook(excel_path, data_only=True)
         ws   = wb.active
         hdrs = [c.value for c in ws[1] if c.value]
         rows = []
@@ -274,5 +280,8 @@ def index():
 
 
 if __name__ == '__main__':
-    print("Dashboard: http://localhost:5000")
+    print("\n" + "="*50)
+    print("  OKX Arb Bot — Web Dashboard")
+    print("  Mở trình duyệt: http://localhost:5000")
+    print("="*50 + "\n")
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
