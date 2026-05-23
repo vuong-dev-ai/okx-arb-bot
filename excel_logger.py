@@ -1,10 +1,14 @@
 import os
+import json
+import subprocess
 from datetime import datetime
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
 EXCEL_FILE = "pnl_log.xlsx"
+_BASE = os.path.dirname(os.path.abspath(__file__))
+DOCS_DIR = os.path.join(_BASE, "docs")
 
 HEADERS = [
     "Thời gian", "Coin", "Giá vào ($)", "Giá hiện tại ($)",
@@ -116,3 +120,84 @@ def log_pnl_snapshot(positions: list[dict], pnl_list: list[dict], usdt_balance: 
     ws.append([""] * len(HEADERS))
 
     wb.save(EXCEL_FILE)
+
+
+def export_json():
+    """Đọc Excel → xuất docs/data.json để GitHub Pages hiển thị."""
+    os.makedirs(DOCS_DIR, exist_ok=True)
+    json_path = os.path.join(DOCS_DIR, "data.json")
+
+    excel_path = os.path.join(_BASE, EXCEL_FILE)
+    if not os.path.exists(excel_path):
+        return
+
+    wb  = openpyxl.load_workbook(excel_path, data_only=True)
+    ws  = wb.active
+    hdrs = [c.value for c in ws[1] if c.value]
+    rows = []
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if any(v is not None and v != "" for v in row):
+            rows.append([str(v) if v is not None else "" for v in row[:len(hdrs)]])
+    wb.close()
+
+    coin_i = hdrs.index("Coin")          if "Coin"          in hdrs else -1
+    pnl_i  = hdrs.index("Tổng PnL ($)") if "Tổng PnL ($)"  in hdrs else -1
+    time_i = hdrs.index("Thời gian")    if "Thời gian"     in hdrs else -1
+    bal_i  = hdrs.index("Số dư USDT ($)") if "Số dư USDT ($)" in hdrs else -1
+
+    # Dùng dòng TỔNG cho chart (fallback: dùng tất cả dòng không phải TỔNG)
+    sum_rows = [r for r in rows if coin_i >= 0 and r[coin_i] == "TỔNG"]
+    if not sum_rows:
+        sum_rows = [r for r in rows if coin_i >= 0 and r[coin_i] not in ("", "TỔNG")]
+
+    cum = 0
+    labels, values = [], []
+    for r in sum_rows:
+        v = float(r[pnl_i]) if pnl_i >= 0 and r[pnl_i] else 0
+        cum += v
+        labels.append(r[time_i] if time_i >= 0 else "")
+        values.append(round(cum, 4))
+
+    # Số dư USDT cuối cùng
+    last_bal = ""
+    if bal_i >= 0:
+        for r in reversed(rows):
+            if r[bal_i]:
+                last_bal = r[bal_i]
+                break
+
+    data = {
+        "updated_at":    datetime.now().strftime("%d/%m/%Y %H:%M"),
+        "total_periods": len(sum_rows),
+        "total_pnl":     round(cum, 4),
+        "last_balance":  last_bal,
+        "headers":       hdrs,
+        "rows":          rows,
+        "chart":         {"labels": labels, "values": values},
+    }
+
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def push_to_github():
+    """Git add data.json → commit → push lên GitHub Pages."""
+    try:
+        subprocess.run(
+            ["git", "-C", _BASE, "add", "docs/data.json"],
+            check=True, capture_output=True,
+        )
+        res = subprocess.run(
+            ["git", "-C", _BASE, "commit", "-m",
+             f"update: pnl data {datetime.now().strftime('%d/%m %H:%M')}"],
+            capture_output=True, text=True,
+        )
+        if "nothing to commit" in (res.stdout + res.stderr):
+            return True
+        subprocess.run(
+            ["git", "-C", _BASE, "push"],
+            check=True, capture_output=True,
+        )
+        return True
+    except subprocess.CalledProcessError:
+        return False

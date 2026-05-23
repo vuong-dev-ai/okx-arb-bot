@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OKX Arb Bot — PnL Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; }
+
+.header {
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  padding: 14px 28px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.logo { font-size: 18px; font-weight: 700; color: #58a6ff; }
+.logo span { color: #3fb950; }
+.readonly-badge {
+  background: #272e3a; color: #8b949e;
+  padding: 3px 12px; border-radius: 20px;
+  font-size: 11px; font-weight: 600; letter-spacing: .04em;
+}
+.upd { color: #8b949e; font-size: 12px; }
+.upd strong { color: #c9d1d9; }
+
+.main { max-width: 1200px; margin: 0 auto; padding: 20px 24px; display: grid; gap: 16px; }
+
+/* Stats */
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.stat {
+  background: #161b22; border: 1px solid #30363d;
+  border-radius: 8px; padding: 18px;
+}
+.stat-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8px; }
+.stat-value { font-size: 26px; font-weight: 700; }
+
+/* Card */
+.card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; }
+.card-head {
+  padding: 13px 18px; border-bottom: 1px solid #21262d;
+  font-size: 12px; font-weight: 600; color: #8b949e;
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.card-body { padding: 18px; }
+
+/* Table */
+.tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+.tbl th {
+  color: #8b949e; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .06em; padding: 8px 12px;
+  border-bottom: 1px solid #21262d; white-space: nowrap;
+}
+.tbl td { padding: 9px 12px; border-bottom: 1px solid #21262d; white-space: nowrap; }
+.tbl tr:last-child td { border-bottom: none; }
+.tbl tbody tr:hover { background: rgba(88,166,255,.04); }
+.tbl-empty { text-align: center; color: #8b949e; padding: 28px !important; }
+
+/* Chart row */
+.chart-row { display: grid; grid-template-columns: 1.5fr 1fr; gap: 18px; }
+.tbl-wrap { overflow: auto; max-height: 320px; }
+.chart-wrap { position: relative; min-height: 280px; }
+
+/* Colors */
+.green { color: #3fb950; }
+.red   { color: #f85149; }
+.muted { color: #8b949e; }
+.blue  { color: #58a6ff; }
+.bold  { font-weight: 700; }
+.sum-row { background: rgba(88,166,255,.06); font-weight: 600; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: #161b22; }
+::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+
+/* Refresh dot */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinning { display: inline-block; animation: spin 1s linear infinite; }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  .chart-row { grid-template-columns: 1fr; }
+  .header { flex-direction: column; gap: 10px; align-items: flex-start; }
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div style="display:flex;align-items:center;gap:12px;">
+    <span class="logo">⬡ OKX <span>Funding</span> Arb</span>
+    <span class="readonly-badge">👁 READ-ONLY</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+    <span class="upd">Bot cập nhật: <strong id="upd-time">—</strong></span>
+    <span class="upd">Trang tải lại: <strong id="next-refresh">5:00</strong></span>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-label">Tổng PnL tích lũy</div>
+      <div class="stat-value" id="s-pnl">$0.00</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Số kỳ funding</div>
+      <div class="stat-value blue" id="s-periods">0</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Số dư USDT cuối</div>
+      <div class="stat-value" id="s-bal">—</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Cập nhật lần cuối</div>
+      <div class="stat-value" id="s-upd" style="font-size:16px;margin-top:4px">—</div>
+    </div>
+  </div>
+
+  <!-- Chart + Summary table -->
+  <div class="card">
+    <div class="card-head">Biểu đồ PnL tích lũy theo thời gian</div>
+    <div class="card-body">
+      <div class="chart-row">
+        <!-- Summary: one row per period -->
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th style="text-align:left">Thời gian</th>
+                <th style="text-align:right">PnL kỳ này</th>
+                <th style="text-align:right">PnL tích lũy</th>
+                <th style="text-align:right">Số dư USDT</th>
+              </tr>
+            </thead>
+            <tbody id="summary-tbody">
+              <tr><td colspan="4" class="tbl-empty">Chưa có dữ liệu</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="pnl-chart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Full history -->
+  <div class="card">
+    <div class="card-head">Chi tiết lịch sử theo từng vị thế</div>
+    <div class="card-body" style="padding:0;">
+      <div class="tbl-wrap" style="max-height:400px;">
+        <table class="tbl">
+          <thead id="hist-head"></thead>
+          <tbody id="hist-body">
+            <tr><td class="tbl-empty">Chưa có dữ liệu</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div style="text-align:center;color:#8b949e;font-size:11px;padding:8px 0 20px;">
+    Dashboard tự động cập nhật mỗi 5 phút &nbsp;·&nbsp; Dữ liệu được bot push lên mỗi 8 giờ
+  </div>
+
+</div>
+
+<script>
+let chart = null;
+let countdown = 300;
+
+const PNL_COLS = ['Funding PnL ($)', 'Giá PnL ($)', 'Tổng PnL ($)', '% Lãi'];
+
+function fmt(n, d) { return parseFloat(n || 0).toFixed(d); }
+function sign(n)   { return n >= 0 ? '+' : ''; }
+function cls(n)    { return parseFloat(n) >= 0 ? 'green' : 'red'; }
+function esc(s)    { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function load() {
+  try {
+    // Cache-bust để luôn lấy bản mới nhất
+    const r = await fetch('./data.json?t=' + Date.now());
+    const d = await r.json();
+    render(d);
+  } catch(e) {
+    console.warn('Lỗi tải data.json:', e);
+  }
+}
+
+function render(d) {
+  // Header
+  document.getElementById('upd-time').textContent = d.updated_at || '—';
+
+  // Stats
+  const pnl = parseFloat(d.total_pnl || 0);
+  const pnlEl = document.getElementById('s-pnl');
+  pnlEl.textContent = sign(pnl) + '$' + fmt(Math.abs(pnl), 4);
+  pnlEl.className   = 'stat-value ' + cls(pnl);
+
+  document.getElementById('s-periods').textContent = d.total_periods || 0;
+  document.getElementById('s-bal').textContent = d.last_balance ? '$' + d.last_balance : '—';
+  document.getElementById('s-upd').textContent = d.updated_at || '—';
+
+  // Summary table (dùng chart labels/values)
+  const labels = d.chart?.labels || [];
+  const values = d.chart?.values || [];
+  const sbody  = document.getElementById('summary-tbody');
+
+  if (!labels.length) {
+    sbody.innerHTML = '<tr><td colspan="4" class="tbl-empty">Chưa có dữ liệu từ bot</td></tr>';
+  } else {
+    // Tìm số dư USDT cho từng kỳ từ rows
+    const hdrs   = d.headers || [];
+    const timeI  = hdrs.indexOf('Thời gian');
+    const coinI  = hdrs.indexOf('Coin');
+    const balI   = hdrs.indexOf('Số dư USDT ($)');
+    const balMap = {};
+    (d.rows || []).forEach(r => {
+      if (r[coinI] === 'TỔNG' && r[balI]) balMap[r[timeI]] = r[balI];
+      else if (r[balI]) balMap[r[timeI]] = balMap[r[timeI]] || r[balI];
+    });
+
+    sbody.innerHTML = labels.map((lbl, i) => {
+      const cum  = values[i];
+      const prev = i > 0 ? values[i-1] : 0;
+      const diff = cum - prev;
+      const bal  = balMap[lbl] ? '$' + balMap[lbl] : '<span class="muted">—</span>';
+      return `<tr>
+        <td>${esc(lbl)}</td>
+        <td style="text-align:right" class="${cls(diff)}">${sign(diff)}$${fmt(Math.abs(diff),4)}</td>
+        <td style="text-align:right" class="${cls(cum)} bold">${sign(cum)}$${fmt(Math.abs(cum),4)}</td>
+        <td style="text-align:right" class="muted">${bal}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Full history table
+  const hdrs  = d.headers || [];
+  const rows  = d.rows   || [];
+  const thead = document.getElementById('hist-head');
+  const tbody = document.getElementById('hist-body');
+
+  if (!hdrs.length || !rows.length) {
+    thead.innerHTML = '';
+    tbody.innerHTML = '<tr><td class="tbl-empty">Chưa có dữ liệu</td></tr>';
+  } else {
+    thead.innerHTML = '<tr>' + hdrs.map(h =>
+      `<th style="text-align:${['Thời gian','Coin'].includes(h)?'left':'right'}">${esc(h)}</th>`
+    ).join('') + '</tr>';
+
+    const coinI = hdrs.indexOf('Coin');
+    tbody.innerHTML = rows.map(row => {
+      const isSum = coinI >= 0 && row[coinI] === 'TỔNG';
+      return `<tr class="${isSum ? 'sum-row' : ''}">` +
+        row.map((v, i) => {
+          const h     = hdrs[i];
+          const align = ['Thời gian','Coin'].includes(h) ? 'left' : 'right';
+          const c     = PNL_COLS.includes(h) && v !== '' ? cls(v) : '';
+          return `<td style="text-align:${align}" class="${c}">${esc(v)}</td>`;
+        }).join('') + '</tr>';
+    }).join('');
+  }
+
+  // Chart
+  renderChart(d);
+}
+
+function renderChart(d) {
+  const labels = d.chart?.labels || [];
+  const values = d.chart?.values || [];
+  const ctx    = document.getElementById('pnl-chart').getContext('2d');
+
+  if (chart) chart.destroy();
+  if (!labels.length) return;
+
+  const ptColors = values.map(v => v >= 0 ? '#3fb950' : '#f85149');
+
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'PnL tích lũy ($)',
+        data: values,
+        borderColor: '#58a6ff',
+        backgroundColor: 'rgba(88,166,255,0.08)',
+        fill: true,
+        tension: 0.35,
+        pointRadius: 6,
+        pointBackgroundColor: ptColors,
+        pointBorderColor: ptColors,
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#8b949e', font: { size: 12 } } },
+        tooltip: {
+          backgroundColor: '#161b22',
+          borderColor: '#30363d',
+          borderWidth: 1,
+          titleColor: '#c9d1d9',
+          bodyColor: '#8b949e',
+          callbacks: {
+            label: ctx => {
+              const v = ctx.parsed.y;
+              return `  PnL tích lũy: ${v >= 0 ? '+' : ''}$${v.toFixed(4)}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#8b949e', maxTicksLimit: 8, font: { size: 11 } }, grid: { color: '#21262d' } },
+        y: {
+          ticks: { color: '#8b949e', font: { size: 11 }, callback: v => (v>=0?'+':'')+'$'+v.toFixed(2) },
+          grid: { color: '#21262d' }
+        }
+      }
+    }
+  });
+}
+
+// Countdown + auto reload
+function tick() {
+  countdown--;
+  const m = String(Math.floor(countdown / 60)).padStart(1,'0');
+  const s = String(countdown % 60).padStart(2,'0');
+  document.getElementById('next-refresh').textContent = m + ':' + s;
+  if (countdown <= 0) { countdown = 300; load(); }
+}
+
+load();
+setInterval(tick, 1000);
+</script>
+</body>
+</html>

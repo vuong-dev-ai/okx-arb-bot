@@ -9,7 +9,7 @@ from strategy import (
     check_exit_conditions, estimate_pnl,
     MIN_FUNDING_RATE, POSITION_PCT, MIN_USDT,
 )
-from excel_logger import log_pnl_snapshot
+from excel_logger import log_pnl_snapshot, export_json, push_to_github
 
 logging.basicConfig(
     level=logging.INFO,
@@ -148,6 +148,11 @@ def run():
             try:
                 log_pnl_snapshot(positions, pnl_list, usdt_bal)
                 log.info(f"  [Excel] Đã ghi lời/lỗ → pnl_log.xlsx  ({datetime.now().strftime('%H:%M')})")
+                export_json()
+                if push_to_github():
+                    log.info("  [GitHub] data.json → GitHub Pages ✓")
+                else:
+                    log.warning("  [GitHub] Push thất bại — kiểm tra git credentials")
             except Exception as e:
                 log.warning(f"  [Excel] Lỗi ghi file: {e}")
             last_excel_log = now

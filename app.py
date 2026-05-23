@@ -10,7 +10,7 @@ from strategy import (
     check_exit_conditions, estimate_pnl,
     MIN_FUNDING_RATE, POSITION_PCT, MIN_USDT,
 )
-from excel_logger import log_pnl_snapshot, EXCEL_FILE
+from excel_logger import log_pnl_snapshot, export_json, push_to_github, EXCEL_FILE
 
 app = Flask(__name__)
 
@@ -137,6 +137,11 @@ def _bot():
                 try:
                     log_pnl_snapshot(ps, pnl_list, get_available_usdt())
                     _log("Đã ghi lời/lỗ → pnl_log.xlsx ✓")
+                    export_json()
+                    if push_to_github():
+                        _log("data.json → GitHub Pages ✓")
+                    else:
+                        _log("Push GitHub thất bại — kiểm tra git credentials")
                 except Exception as e:
                     _log(f"Lỗi ghi Excel: {e}")
             last_excel = now
