@@ -1,43 +1,43 @@
 {
-  "updated_at": "23/05/2026 12:44",
-  "usdt_balance": 10516.41442523028,
-  "total_live_pnl": 0.0,
+  "updated_at": "23/05/2026 13:17",
+  "usdt_balance": 34909.72176467924,
+  "total_live_pnl": -0.0,
   "positions": [
     {
       "coin": "BTC",
-      "entry_price": 75493.4,
-      "current_price": 75506.8,
-      "usdt_in": 10493.58,
+      "entry_price": 75489.4,
+      "current_price": 75490.7,
+      "usdt_in": 10470.38,
       "funding_pnl": 0.0,
-      "price_pnl": 0.0,
-      "total_pnl": 0.0,
-      "pct": 0.0,
+      "price_pnl": -0.0,
+      "total_pnl": -0.0,
+      "pct": -0.0,
       "n_payments": 0,
-      "open_time": "23/05 12:39"
+      "open_time": "23/05 13:17"
     },
     {
       "coin": "XRP",
       "entry_price": 1.33,
       "current_price": 1.33,
-      "usdt_in": 7028.74,
+      "usdt_in": 7015.75,
       "funding_pnl": 0.0,
       "price_pnl": 0.0,
       "total_pnl": 0.0,
       "pct": 0.0,
       "n_payments": 0,
-      "open_time": "23/05 12:39"
+      "open_time": "23/05 13:17"
     },
     {
       "coin": "DOGE",
       "entry_price": 0.1,
       "current_price": 0.1,
-      "usdt_in": 4709.02,
+      "usdt_in": 4699.53,
       "funding_pnl": 0.0,
       "price_pnl": 0.0,
       "total_pnl": 0.0,
       "pct": 0.0,
       "n_payments": 0,
-      "open_time": "23/05 12:39"
+      "open_time": "23/05 13:17"
     }
   ],
   "top_rates": [
@@ -169,18 +169,72 @@
         "0",
         "",
         "34978.92"
+      ],
+      [
+        "23/05/2026 13:17",
+        "BTC",
+        "75489.4",
+        "75490.7",
+        "10470.38",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        ""
+      ],
+      [
+        "23/05/2026 13:17",
+        "XRP",
+        "1.3343",
+        "1.3342",
+        "7015.75",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        ""
+      ],
+      [
+        "23/05/2026 13:17",
+        "DOGE",
+        "0.101",
+        "0.101",
+        "4699.53",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "34909.72"
+      ],
+      [
+        "23/05/2026 13:17",
+        "TỔNG",
+        "",
+        "",
+        "22185.66",
+        "",
+        "",
+        "0",
+        "0",
+        "",
+        "34909.72"
       ]
     ],
     "chart": {
       "labels": [
-        "23/05/2026 12:39"
+        "23/05/2026 12:39",
+        "23/05/2026 13:17"
       ],
       "values": [
+        0.0,
         0.0
       ]
     },
-    "last_balance": "34978.92",
-    "total_periods": 1,
+    "last_balance": "34909.72",
+    "total_periods": 2,
     "total_pnl": 0.0
   }
 }
