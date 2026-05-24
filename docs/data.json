@@ -1,28 +1,16 @@
 {
-  "updated_at": "25/05/2026 00:23",
-  "usdt_balance": 20089.384011589722,
-  "total_live_pnl": 1.593,
+  "updated_at": "25/05/2026 00:29",
+  "usdt_balance": 31711.098466878957,
+  "total_live_pnl": 0.6216,
   "positions": [
-    {
-      "coin": "DOGE",
-      "entry_price": 0.1,
-      "current_price": 0.1,
-      "usdt_in": 9701.89,
-      "funding_pnl": 0.9716,
-      "price_pnl": -0.0,
-      "total_pnl": 0.9716,
-      "pct": 0.01,
-      "n_payments": 1,
-      "open_time": "24/05 22:07"
-    },
     {
       "coin": "ADA",
       "entry_price": 0.24,
       "current_price": 0.24,
       "usdt_in": 6208.62,
-      "funding_pnl": 0.6214,
+      "funding_pnl": 0.6216,
       "price_pnl": 0.0,
-      "total_pnl": 0.6214,
+      "total_pnl": 0.6216,
       "pct": 0.01,
       "n_payments": 1,
       "open_time": "24/05 22:08"
@@ -38,9 +26,27 @@
       "pct": 0.0,
       "n_payments": 0,
       "open_time": "25/05 00:13"
+    },
+    {
+      "coin": "SOL",
+      "entry_price": 85.32,
+      "current_price": 85.32,
+      "usdt_in": 9513.18,
+      "funding_pnl": 0.0,
+      "price_pnl": 0.0,
+      "total_pnl": 0.0,
+      "pct": 0.0,
+      "n_payments": 0,
+      "open_time": "25/05 00:29"
     }
   ],
   "top_rates": [
+    {
+      "coin": "SOL",
+      "rate": 0.0075,
+      "apy": 821.25,
+      "next": 0.0
+    },
     {
       "coin": "ADA",
       "rate": 0.0075,
@@ -48,27 +54,27 @@
       "next": 0.0
     },
     {
-      "coin": "OP",
-      "rate": 0.0017095917555616,
-      "apy": 187.20029723399517,
+      "coin": "PEPE",
+      "rate": 0.0053447637921067,
+      "apy": 585.2516352356837,
       "next": 0.0
     },
     {
       "coin": "BTC",
-      "rate": 0.0016836057365936,
-      "apy": 184.35482815699922,
+      "rate": 0.0023428604867733,
+      "apy": 256.54322330167633,
       "next": 0.0
     },
     {
-      "coin": "PEPE",
-      "rate": 0.0015365645790577,
-      "apy": 168.25382140681816,
+      "coin": "OP",
+      "rate": 0.0016389354883292,
+      "apy": 179.4634359720474,
       "next": 0.0
     },
     {
       "coin": "ETH",
-      "rate": 0.0007376404817092,
-      "apy": 80.77163274715741,
+      "rate": 0.0012451628053442,
+      "apy": 136.3453271851899,
       "next": 0.0
     },
     {
@@ -79,12 +85,6 @@
     },
     {
       "coin": "TRX",
-      "rate": 0.0001,
-      "apy": 10.950000000000001,
-      "next": 0.0
-    },
-    {
-      "coin": "LTC",
       "rate": 0.0001,
       "apy": 10.950000000000001,
       "next": 0.0
