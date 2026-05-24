@@ -1,20 +1,8 @@
 {
-  "updated_at": "25/05/2026 00:44",
-  "usdt_balance": 19330.122859878957,
-  "total_live_pnl": 0.6224,
+  "updated_at": "25/05/2026 00:49",
+  "usdt_balance": 28621.36527116676,
+  "total_live_pnl": 0.0,
   "positions": [
-    {
-      "coin": "ADA",
-      "entry_price": 0.24,
-      "current_price": 0.24,
-      "usdt_in": 6208.62,
-      "funding_pnl": 0.6224,
-      "price_pnl": 0.0,
-      "total_pnl": 0.6224,
-      "pct": 0.01,
-      "n_payments": 1,
-      "open_time": "24/05 22:08"
-    },
     {
       "coin": "OP",
       "entry_price": 0.13,
@@ -38,9 +26,33 @@
       "pct": 0.0,
       "n_payments": 0,
       "open_time": "25/05 00:29"
+    },
+    {
+      "coin": "NEAR",
+      "entry_price": 2.43,
+      "current_price": 2.43,
+      "usdt_in": 8585.61,
+      "funding_pnl": 0.0,
+      "price_pnl": 0.0,
+      "total_pnl": 0.0,
+      "pct": 0.0,
+      "n_payments": 0,
+      "open_time": "25/05 00:49"
     }
   ],
   "top_rates": [
+    {
+      "coin": "NEAR",
+      "rate": 0.015,
+      "apy": 1642.5,
+      "next": 0.0
+    },
+    {
+      "coin": "PEPE",
+      "rate": 0.0097303337461246,
+      "apy": 1065.4715452006437,
+      "next": 0.0
+    },
     {
       "coin": "SOL",
       "rate": 0.0075,
@@ -48,33 +60,21 @@
       "next": 0.0
     },
     {
-      "coin": "ADA",
-      "rate": 0.0075,
-      "apy": 821.25,
-      "next": 0.0
-    },
-    {
-      "coin": "PEPE",
-      "rate": 0.0053447637921067,
-      "apy": 585.2516352356837,
-      "next": 0.0
-    },
-    {
       "coin": "BTC",
-      "rate": 0.0023428604867733,
-      "apy": 256.54322330167633,
-      "next": 0.0
-    },
-    {
-      "coin": "OP",
-      "rate": 0.0016389354883292,
-      "apy": 179.4634359720474,
+      "rate": 0.0028566537151573,
+      "apy": 312.80358180972434,
       "next": 0.0
     },
     {
       "coin": "ETH",
-      "rate": 0.0012451628053442,
-      "apy": 136.3453271851899,
+      "rate": 0.0021264454962501,
+      "apy": 232.84578183938595,
+      "next": 0.0
+    },
+    {
+      "coin": "OP",
+      "rate": 0.0015446513446411,
+      "apy": 169.13932223820046,
       "next": 0.0
     },
     {
