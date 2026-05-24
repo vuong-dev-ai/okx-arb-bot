@@ -1,6 +1,6 @@
 {
-  "updated_at": "25/05/2026 02:59",
-  "usdt_balance": 17781.31105576875,
+  "updated_at": "25/05/2026 03:05",
+  "usdt_balance": 25368.326156243507,
   "total_live_pnl": 0.0,
   "positions": [
     {
@@ -18,7 +18,7 @@
     {
       "coin": "SOL",
       "entry_price": 85.32,
-      "current_price": 85.36,
+      "current_price": 85.18,
       "usdt_in": 9513.18,
       "funding_pnl": 0.0,
       "price_pnl": 0.0,
@@ -28,29 +28,53 @@
       "open_time": "25/05 00:29"
     },
     {
-      "coin": "NEAR",
-      "entry_price": 2.43,
-      "current_price": 2.42,
-      "usdt_in": 8585.61,
+      "coin": "DOT",
+      "entry_price": 1.25,
+      "current_price": 1.25,
+      "usdt_in": 7610.4,
       "funding_pnl": 0.0,
       "price_pnl": 0.0,
       "total_pnl": 0.0,
       "pct": 0.0,
       "n_payments": 0,
-      "open_time": "25/05 00:49"
+      "open_time": "25/05 03:05"
     }
   ],
   "top_rates": [
     {
-      "coin": "NEAR",
+      "coin": "DOT",
       "rate": 0.015,
       "apy": 1642.5,
       "next": 0.0
     },
     {
+      "coin": "ARB",
+      "rate": 0.015,
+      "apy": 1642.5,
+      "next": 0.0
+    },
+    {
+      "coin": "OP",
+      "rate": 0.015,
+      "apy": 1642.5,
+      "next": 0.0
+    },
+    {
+      "coin": "BCH",
+      "rate": 0.015,
+      "apy": 1642.5,
+      "next": 0.0
+    },
+    {
+      "coin": "TRX",
+      "rate": 0.0124482370983412,
+      "apy": 1363.0819622683616,
+      "next": 0.0
+    },
+    {
       "coin": "PEPE",
-      "rate": 0.0097303337461246,
-      "apy": 1065.4715452006437,
+      "rate": 0.0096362090919324,
+      "apy": 1055.1648955665978,
       "next": 0.0
     },
     {
@@ -60,33 +84,9 @@
       "next": 0.0
     },
     {
-      "coin": "BTC",
-      "rate": 0.0028566537151573,
-      "apy": 312.80358180972434,
-      "next": 0.0
-    },
-    {
-      "coin": "ETH",
-      "rate": 0.0021264454962501,
-      "apy": 232.84578183938595,
-      "next": 0.0
-    },
-    {
-      "coin": "OP",
-      "rate": 0.0015446513446411,
-      "apy": 169.13932223820046,
-      "next": 0.0
-    },
-    {
-      "coin": "ARB",
-      "rate": 0.0001,
-      "apy": 10.950000000000001,
-      "next": 0.0
-    },
-    {
-      "coin": "TRX",
-      "rate": 0.0001,
-      "apy": 10.950000000000001,
+      "coin": "LINK",
+      "rate": 0.0053124370197112,
+      "apy": 581.7118536583764,
       "next": 0.0
     }
   ],
