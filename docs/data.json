@@ -1,16 +1,16 @@
 {
-  "updated_at": "25/05/2026 00:13",
-  "usdt_balance": 31438.096236259724,
-  "total_live_pnl": 1.595,
+  "updated_at": "25/05/2026 00:18",
+  "usdt_balance": 20089.384011589722,
+  "total_live_pnl": 1.5935,
   "positions": [
     {
       "coin": "DOGE",
       "entry_price": 0.1,
       "current_price": 0.1,
       "usdt_in": 9701.89,
-      "funding_pnl": 0.9721,
-      "price_pnl": 0.0,
-      "total_pnl": 0.9721,
+      "funding_pnl": 0.9716,
+      "price_pnl": -0.0,
+      "total_pnl": 0.9716,
       "pct": 0.01,
       "n_payments": 1,
       "open_time": "24/05 22:07"
@@ -20,9 +20,9 @@
       "entry_price": 0.24,
       "current_price": 0.24,
       "usdt_in": 6208.62,
-      "funding_pnl": 0.6229,
+      "funding_pnl": 0.6219,
       "price_pnl": 0.0,
-      "total_pnl": 0.6229,
+      "total_pnl": 0.6219,
       "pct": 0.01,
       "n_payments": 1,
       "open_time": "24/05 22:08"
