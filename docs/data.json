@@ -1,6 +1,6 @@
 {
-  "updated_at": "25/05/2026 00:49",
-  "usdt_balance": 28621.36527116676,
+  "updated_at": "25/05/2026 00:54",
+  "usdt_balance": 17781.31105576875,
   "total_live_pnl": 0.0,
   "positions": [
     {
@@ -30,7 +30,7 @@
     {
       "coin": "NEAR",
       "entry_price": 2.43,
-      "current_price": 2.43,
+      "current_price": 2.44,
       "usdt_in": 8585.61,
       "funding_pnl": 0.0,
       "price_pnl": 0.0,
