@@ -1,28 +1,16 @@
 {
-  "updated_at": "24/05/2026 23:18",
-  "usdt_balance": 13244.350149010595,
-  "total_live_pnl": 3.1175,
+  "updated_at": "24/05/2026 23:23",
+  "usdt_balance": 31444.884684310597,
+  "total_live_pnl": 1.5953,
   "positions": [
-    {
-      "coin": "BNB",
-      "entry_price": 655.4,
-      "current_price": 657.5,
-      "usdt_in": 15159.4,
-      "funding_pnl": 1.5208,
-      "price_pnl": -0.0,
-      "total_pnl": 1.5208,
-      "pct": 0.01,
-      "n_payments": 1,
-      "open_time": "24/05 22:07"
-    },
     {
       "coin": "DOGE",
       "entry_price": 0.1,
       "current_price": 0.1,
       "usdt_in": 9701.89,
-      "funding_pnl": 0.9735,
+      "funding_pnl": 0.9721,
       "price_pnl": 0.0,
-      "total_pnl": 0.9735,
+      "total_pnl": 0.9721,
       "pct": 0.01,
       "n_payments": 1,
       "open_time": "24/05 22:07"
@@ -38,11 +26,23 @@
       "pct": 0.01,
       "n_payments": 1,
       "open_time": "24/05 22:08"
+    },
+    {
+      "coin": "XRP",
+      "entry_price": 1.35,
+      "current_price": 1.35,
+      "usdt_in": 9433.38,
+      "funding_pnl": 0.0,
+      "price_pnl": 0.0,
+      "total_pnl": 0.0,
+      "pct": 0.0,
+      "n_payments": 0,
+      "open_time": "24/05 23:23"
     }
   ],
   "top_rates": [
     {
-      "coin": "BNB",
+      "coin": "XRP",
       "rate": 0.0001,
       "apy": 10.950000000000001,
       "next": 0.0
@@ -55,12 +55,6 @@
     },
     {
       "coin": "ADA",
-      "rate": 0.0001,
-      "apy": 10.950000000000001,
-      "next": 0.0
-    },
-    {
-      "coin": "ARB",
       "rate": 0.0001,
       "apy": 10.950000000000001,
       "next": 0.0
@@ -84,9 +78,15 @@
       "next": 0.0
     },
     {
-      "coin": "BCH",
-      "rate": 0.0001,
-      "apy": 10.950000000000001,
+      "coin": "ARB",
+      "rate": 3.48215706184e-05,
+      "apy": 3.8129619827148,
+      "next": 0.0
+    },
+    {
+      "coin": "BNB",
+      "rate": -1.83111071596e-05,
+      "apy": -2.0050662339762,
       "next": 0.0
     }
   ],
