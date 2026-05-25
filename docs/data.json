@@ -1,16 +1,16 @@
 {
-  "updated_at": "25/05/2026 09:58",
+  "updated_at": "25/05/2026 10:03",
   "usdt_balance": 16067.109608323519,
-  "total_live_pnl": 200.5698,
+  "total_live_pnl": 200.5073,
   "positions": [
     {
       "coin": "OP",
       "entry_price": 0.13,
       "current_price": 0.13,
       "usdt_in": 9431.42,
-      "funding_pnl": 16.0598,
+      "funding_pnl": 16.0727,
       "price_pnl": 0.0,
-      "total_pnl": 16.0598,
+      "total_pnl": 16.0727,
       "pct": 0.17,
       "n_payments": 1,
       "open_time": "25/05 00:13"
@@ -18,12 +18,12 @@
     {
       "coin": "SOL",
       "entry_price": 85.32,
-      "current_price": 85.11,
+      "current_price": 85.02,
       "usdt_in": 9513.18,
-      "funding_pnl": 71.1732,
+      "funding_pnl": 71.098,
       "price_pnl": 0.0,
-      "total_pnl": 71.1732,
-      "pct": 0.748,
+      "total_pnl": 71.098,
+      "pct": 0.747,
       "n_payments": 1,
       "open_time": "25/05 00:29"
     },
