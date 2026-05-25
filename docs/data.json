@@ -1,17 +1,17 @@
 {
-  "updated_at": "25/05/2026 23:28",
-  "usdt_balance": 12219.11090897346,
-  "total_live_pnl": 221.1001,
+  "updated_at": "25/05/2026 23:33",
+  "usdt_balance": 6830.35094134072,
+  "total_live_pnl": 221.2134,
   "positions": [
     {
       "coin": "TRX",
       "entry_price": 0.37,
       "current_price": 0.37,
       "usdt_in": 10848.68,
-      "funding_pnl": 162.364,
+      "funding_pnl": 162.4774,
       "price_pnl": 0.0,
-      "total_pnl": 162.364,
-      "pct": 1.497,
+      "total_pnl": 162.4774,
+      "pct": 1.498,
       "n_payments": 1,
       "open_time": "25/05 22:42"
     },
