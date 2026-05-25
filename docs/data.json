@@ -1,48 +1,54 @@
 {
-  "updated_at": "25/05/2026 10:23",
-  "usdt_balance": 16067.109608323519,
-  "total_live_pnl": 200.2342,
+  "updated_at": "25/05/2026 10:49",
+  "usdt_balance": 24753.474927388725,
+  "total_live_pnl": -0.0,
   "positions": [
     {
-      "coin": "OP",
-      "entry_price": 0.13,
-      "current_price": 0.13,
-      "usdt_in": 9431.42,
-      "funding_pnl": 16.0727,
-      "price_pnl": 0.0,
-      "total_pnl": 16.0727,
-      "pct": 0.17,
-      "n_payments": 1,
-      "open_time": "25/05 00:13"
-    },
-    {
-      "coin": "SOL",
-      "entry_price": 85.32,
-      "current_price": 85.02,
-      "usdt_in": 9513.18,
-      "funding_pnl": 71.098,
-      "price_pnl": 0.0,
-      "total_pnl": 71.098,
-      "pct": 0.747,
-      "n_payments": 1,
-      "open_time": "25/05 00:29"
-    },
-    {
       "coin": "DOT",
-      "entry_price": 1.25,
-      "current_price": 1.24,
-      "usdt_in": 7610.4,
-      "funding_pnl": 113.0636,
+      "entry_price": 1.24,
+      "current_price": 1.25,
+      "usdt_in": 7425.93,
+      "funding_pnl": 0.0,
+      "price_pnl": -0.0,
+      "total_pnl": -0.0,
+      "pct": -0.0,
+      "n_payments": 0,
+      "open_time": "25/05 10:49"
+    },
+    {
+      "coin": "OP",
+      "entry_price": 0.12,
+      "current_price": 0.13,
+      "usdt_in": 4581.21,
+      "funding_pnl": 0.0,
       "price_pnl": 0.0,
-      "total_pnl": 113.0636,
-      "pct": 1.486,
-      "n_payments": 1,
-      "open_time": "25/05 03:05"
+      "total_pnl": 0.0,
+      "pct": 0.0,
+      "n_payments": 0,
+      "open_time": "25/05 10:49"
+    },
+    {
+      "coin": "ARB",
+      "entry_price": 0.1,
+      "current_price": 0.1,
+      "usdt_in": 2898.0,
+      "funding_pnl": 0.0,
+      "price_pnl": 0.0,
+      "total_pnl": 0.0,
+      "pct": 0.0,
+      "n_payments": 0,
+      "open_time": "25/05 10:49"
     }
   ],
   "top_rates": [
     {
       "coin": "DOT",
+      "rate": 0.015,
+      "apy": 1642.5,
+      "next": 0.0
+    },
+    {
+      "coin": "OP",
       "rate": 0.015,
       "apy": 1642.5,
       "next": 0.0
@@ -54,39 +60,33 @@
       "next": 0.0
     },
     {
-      "coin": "OP",
-      "rate": 0.015,
-      "apy": 1642.5,
-      "next": 0.0
-    },
-    {
       "coin": "BCH",
       "rate": 0.015,
       "apy": 1642.5,
       "next": 0.0
     },
     {
-      "coin": "TRX",
-      "rate": 0.0124482370983412,
-      "apy": 1363.0819622683616,
+      "coin": "NEAR",
+      "rate": 0.015,
+      "apy": 1642.5,
+      "next": 0.0
+    },
+    {
+      "coin": "SUI",
+      "rate": 0.0121816428553224,
+      "apy": 1333.8898926578026,
       "next": 0.0
     },
     {
       "coin": "PEPE",
-      "rate": 0.0096362090919324,
-      "apy": 1055.1648955665978,
+      "rate": 0.0119986615851637,
+      "apy": 1313.853443575425,
       "next": 0.0
     },
     {
-      "coin": "SOL",
-      "rate": 0.0075,
-      "apy": 821.25,
-      "next": 0.0
-    },
-    {
-      "coin": "LINK",
-      "rate": 0.0053124370197112,
-      "apy": 581.7118536583764,
+      "coin": "TRX",
+      "rate": 0.0076965883496922,
+      "apy": 842.7764242912959,
       "next": 0.0
     }
   ],
