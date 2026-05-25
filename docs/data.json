@@ -1,29 +1,17 @@
 {
-  "updated_at": "25/05/2026 23:23",
-  "usdt_balance": 5876.4198304195,
-  "total_live_pnl": 316.4136,
+  "updated_at": "25/05/2026 23:28",
+  "usdt_balance": 12219.11090897346,
+  "total_live_pnl": 221.1001,
   "positions": [
     {
       "coin": "TRX",
       "entry_price": 0.37,
       "current_price": 0.37,
       "usdt_in": 10848.68,
-      "funding_pnl": 162.2551,
+      "funding_pnl": 162.364,
       "price_pnl": 0.0,
-      "total_pnl": 162.2551,
-      "pct": 1.496,
-      "n_payments": 1,
-      "open_time": "25/05 22:42"
-    },
-    {
-      "coin": "NEAR",
-      "entry_price": 2.67,
-      "current_price": 2.7,
-      "usdt_in": 6292.24,
-      "funding_pnl": 95.337,
-      "price_pnl": 0.0,
-      "total_pnl": 95.337,
-      "pct": 1.515,
+      "total_pnl": 162.364,
+      "pct": 1.497,
       "n_payments": 1,
       "open_time": "25/05 22:42"
     },
@@ -32,15 +20,76 @@
       "entry_price": 1.92,
       "current_price": 2.06,
       "usdt_in": 3649.88,
-      "funding_pnl": 58.8215,
+      "funding_pnl": 58.7361,
       "price_pnl": 0.0,
-      "total_pnl": 58.8215,
-      "pct": 1.612,
+      "total_pnl": 58.7361,
+      "pct": 1.609,
       "n_payments": 1,
       "open_time": "25/05 22:42"
+    },
+    {
+      "coin": "NEAR",
+      "entry_price": 2.7,
+      "current_price": 2.7,
+      "usdt_in": 4275.22,
+      "funding_pnl": 0.0,
+      "price_pnl": 0.0,
+      "total_pnl": 0.0,
+      "pct": 0.0,
+      "n_payments": 0,
+      "open_time": "25/05 23:28"
     }
   ],
-  "top_rates": [],
+  "top_rates": [
+    {
+      "coin": "TRX",
+      "rate": 0.015,
+      "apy": 1642.5,
+      "next": 0.0
+    },
+    {
+      "coin": "TON",
+      "rate": 0.015,
+      "apy": 1642.5,
+      "next": 0.0
+    },
+    {
+      "coin": "NEAR",
+      "rate": 0.0093067260010694,
+      "apy": 1019.0864971170992,
+      "next": 0.0
+    },
+    {
+      "coin": "SOL",
+      "rate": 0.005960922604081,
+      "apy": 652.7210251468695,
+      "next": 0.0
+    },
+    {
+      "coin": "DOT",
+      "rate": 0.0047425579515464,
+      "apy": 519.3100956943308,
+      "next": 0.0
+    },
+    {
+      "coin": "AVAX",
+      "rate": 0.0016298177900828,
+      "apy": 178.4650480140666,
+      "next": 0.0
+    },
+    {
+      "coin": "OP",
+      "rate": 0.0012282964343431,
+      "apy": 134.49845956056944,
+      "next": 0.0
+    },
+    {
+      "coin": "FLOKI",
+      "rate": 1.25e-05,
+      "apy": 1.3687500000000001,
+      "next": 0.0
+    }
+  ],
   "history": {
     "headers": [
       "Thời gian",
