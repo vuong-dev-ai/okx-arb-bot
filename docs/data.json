@@ -1,7 +1,7 @@
 {
-  "updated_at": "25/05/2026 08:57",
+  "updated_at": "25/05/2026 09:02",
   "usdt_balance": 16067.109608323519,
-  "total_live_pnl": 200.5998,
+  "total_live_pnl": 200.2357,
   "positions": [
     {
       "coin": "OP",
@@ -30,12 +30,12 @@
     {
       "coin": "DOT",
       "entry_price": 1.25,
-      "current_price": 1.25,
+      "current_price": 1.24,
       "usdt_in": 7610.4,
-      "funding_pnl": 113.3367,
+      "funding_pnl": 112.9726,
       "price_pnl": 0.0,
-      "total_pnl": 113.3367,
-      "pct": 1.489,
+      "total_pnl": 112.9726,
+      "pct": 1.484,
       "n_payments": 1,
       "open_time": "25/05 03:05"
     }
