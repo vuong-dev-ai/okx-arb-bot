@@ -1,7 +1,7 @@
 {
-  "updated_at": "26/05/2026 12:01",
+  "updated_at": "26/05/2026 12:06",
   "usdt_balance": 8171.118430828704,
-  "total_live_pnl": 435.5544,
+  "total_live_pnl": 435.2126,
   "positions": [
     {
       "coin": "TRX",
@@ -18,19 +18,19 @@
     {
       "coin": "TON",
       "entry_price": 1.92,
-      "current_price": 1.9,
+      "current_price": 1.89,
       "usdt_in": 3649.88,
-      "funding_pnl": 107.9582,
+      "funding_pnl": 107.6163,
       "price_pnl": 0.0,
-      "total_pnl": 107.9582,
-      "pct": 2.958,
+      "total_pnl": 107.6163,
+      "pct": 2.948,
       "n_payments": 2,
       "open_time": "25/05 22:42"
     },
     {
       "coin": "LTC",
       "entry_price": 52.25,
-      "current_price": 52.45,
+      "current_price": 52.38,
       "usdt_in": 4927.18,
       "funding_pnl": 0.0,
       "price_pnl": -0.0,
