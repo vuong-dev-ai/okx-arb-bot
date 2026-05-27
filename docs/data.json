@@ -1,7 +1,7 @@
 {
-  "updated_at": "27/05/2026 21:52",
+  "updated_at": "27/05/2026 21:57",
   "usdt_balance": 9653.888941728575,
-  "total_live_pnl": 1016.0624,
+  "total_live_pnl": 1016.1232,
   "positions": [
     {
       "coin": "TRX",
@@ -18,12 +18,12 @@
     {
       "coin": "LTC",
       "entry_price": 52.25,
-      "current_price": 52.27,
+      "current_price": 52.34,
       "usdt_in": 4927.18,
-      "funding_pnl": 45.3486,
+      "funding_pnl": 45.4093,
       "price_pnl": -0.0,
-      "total_pnl": 45.3486,
-      "pct": 0.92,
+      "total_pnl": 45.4093,
+      "pct": 0.922,
       "n_payments": 4,
       "open_time": "26/05 10:46"
     },
