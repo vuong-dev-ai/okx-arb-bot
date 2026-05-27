@@ -1,5 +1,5 @@
 {
-  "updated_at": "28/05/2026 03:07",
+  "updated_at": "28/05/2026 03:12",
   "usdt_balance": 15969.833861597377,
   "total_live_pnl": 57.974,
   "positions": [
@@ -30,7 +30,7 @@
     {
       "coin": "TON",
       "entry_price": 1.89,
-      "current_price": 1.9,
+      "current_price": 1.91,
       "usdt_in": 5702.13,
       "funding_pnl": 0.0,
       "price_pnl": 0.0,
