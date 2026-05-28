@@ -1,16 +1,16 @@
 {
-  "updated_at": "28/05/2026 21:24",
+  "updated_at": "28/05/2026 21:29",
   "usdt_balance": 8953.81540615189,
-  "total_live_pnl": 1.0481,
+  "total_live_pnl": 1.0547,
   "positions": [
     {
       "coin": "TON",
       "entry_price": 1.89,
-      "current_price": 1.74,
+      "current_price": 1.75,
       "usdt_in": 5702.13,
-      "funding_pnl": 1.0481,
+      "funding_pnl": 1.0547,
       "price_pnl": 0.0,
-      "total_pnl": 1.0481,
+      "total_pnl": 1.0547,
       "pct": 0.018,
       "n_payments": 2,
       "open_time": "28/05 00:07"
@@ -30,12 +30,12 @@
     {
       "coin": "BTC",
       "entry_price": 73533.4,
-      "current_price": 73034.9,
+      "current_price": 72989.5,
       "usdt_in": 3191.35,
       "funding_pnl": 0.0,
-      "price_pnl": -0.0,
-      "total_pnl": -0.0,
-      "pct": -0.0,
+      "price_pnl": 0.0,
+      "total_pnl": 0.0,
+      "pct": 0.0,
       "n_payments": 0,
       "open_time": "28/05 21:19"
     }
