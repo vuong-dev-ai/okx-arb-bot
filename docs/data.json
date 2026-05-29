@@ -1,7 +1,7 @@
 {
-  "updated_at": "30/05/2026 00:07",
+  "updated_at": "30/05/2026 00:12",
   "usdt_balance": 6611.137246790194,
-  "total_live_pnl": 1.277,
+  "total_live_pnl": 1.2557,
   "positions": [
     {
       "coin": "LTC",
@@ -18,12 +18,12 @@
     {
       "coin": "ADA",
       "entry_price": 0.23,
-      "current_price": 0.23,
+      "current_price": 0.24,
       "usdt_in": 2115.48,
-      "funding_pnl": 0.4235,
-      "price_pnl": -0.0033,
-      "total_pnl": 0.4202,
-      "pct": 0.02,
+      "funding_pnl": 0.4249,
+      "price_pnl": -0.016,
+      "total_pnl": 0.409,
+      "pct": 0.019,
       "n_payments": 2,
       "open_time": "29/05 14:46"
     },
@@ -33,9 +33,9 @@
       "current_price": 0.92,
       "usdt_in": 2362.36,
       "funding_pnl": 0.0,
-      "price_pnl": -0.0083,
-      "total_pnl": -0.0083,
-      "pct": -0.0,
+      "price_pnl": -0.0183,
+      "total_pnl": -0.0183,
+      "pct": -0.001,
       "n_payments": 0,
       "open_time": "29/05 23:27"
     }
