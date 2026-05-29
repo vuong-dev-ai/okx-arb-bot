@@ -1,48 +1,54 @@
 {
-  "updated_at": "28/05/2026 22:04",
-  "usdt_balance": 8953.81540615189,
-  "total_live_pnl": 1.0553,
+  "updated_at": "29/05/2026 14:46",
+  "usdt_balance": 17247.92003821189,
+  "total_live_pnl": 0.0007,
   "positions": [
     {
-      "coin": "TON",
-      "entry_price": 1.89,
-      "current_price": 1.75,
-      "usdt_in": 5702.13,
-      "funding_pnl": 1.0553,
-      "price_pnl": 0.0,
-      "total_pnl": 1.0553,
-      "pct": 0.019,
-      "n_payments": 2,
-      "open_time": "28/05 00:07"
+      "coin": "LTC",
+      "entry_price": 51.59,
+      "current_price": 51.57,
+      "usdt_in": 4312.68,
+      "funding_pnl": 0.0,
+      "price_pnl": 0.0015,
+      "total_pnl": 0.0015,
+      "pct": 0.0,
+      "n_payments": 0,
+      "open_time": "29/05 14:46"
+    },
+    {
+      "coin": "DOGE",
+      "entry_price": 0.1,
+      "current_price": 0.1,
+      "usdt_in": 3018.12,
+      "funding_pnl": 0.0,
+      "price_pnl": -0.0007,
+      "total_pnl": -0.0007,
+      "pct": -0.0,
+      "n_payments": 0,
+      "open_time": "29/05 14:46"
     },
     {
       "coin": "ADA",
       "entry_price": 0.23,
       "current_price": 0.23,
-      "usdt_in": 4268.63,
+      "usdt_in": 2115.48,
       "funding_pnl": 0.0,
-      "price_pnl": -0.0,
-      "total_pnl": -0.0,
+      "price_pnl": -0.0001,
+      "total_pnl": -0.0001,
       "pct": -0.0,
       "n_payments": 0,
-      "open_time": "28/05 19:49"
-    },
-    {
-      "coin": "BTC",
-      "entry_price": 73533.4,
-      "current_price": 73012.8,
-      "usdt_in": 3191.35,
-      "funding_pnl": 0.0,
-      "price_pnl": 0.0,
-      "total_pnl": 0.0,
-      "pct": 0.0,
-      "n_payments": 0,
-      "open_time": "28/05 21:19"
+      "open_time": "29/05 14:46"
     }
   ],
   "top_rates": [
     {
-      "coin": "TON",
+      "coin": "LTC",
+      "rate": 0.0001,
+      "apy": 10.950000000000001,
+      "next": 0.0
+    },
+    {
+      "coin": "DOGE",
       "rate": 0.0001,
       "apy": 10.950000000000001,
       "next": 0.0
@@ -66,25 +72,19 @@
       "next": 0.0
     },
     {
-      "coin": "LTC",
-      "rate": 7.12434875988e-05,
-      "apy": 7.801161892068599,
+      "coin": "SUI",
+      "rate": 0.0001,
+      "apy": 10.950000000000001,
+      "next": 0.0
+    },
+    {
+      "coin": "SOL",
+      "rate": 8.41948381268e-05,
+      "apy": 9.2193347748846,
       "next": 0.0
     },
     {
       "coin": "TRX",
-      "rate": 5e-05,
-      "apy": 5.4750000000000005,
-      "next": 0.0
-    },
-    {
-      "coin": "NEAR",
-      "rate": 5e-05,
-      "apy": 5.4750000000000005,
-      "next": 0.0
-    },
-    {
-      "coin": "DOT",
       "rate": 5e-05,
       "apy": 5.4750000000000005,
       "next": 0.0
