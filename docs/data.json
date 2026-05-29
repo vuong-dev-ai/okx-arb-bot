@@ -1,16 +1,16 @@
 {
-  "updated_at": "29/05/2026 23:22",
+  "updated_at": "29/05/2026 23:27",
   "usdt_balance": 9445.187060730193,
-  "total_live_pnl": 1.2825,
+  "total_live_pnl": 1.2957,
   "positions": [
     {
       "coin": "LTC",
       "entry_price": 51.59,
-      "current_price": 51.55,
+      "current_price": 51.56,
       "usdt_in": 4312.68,
-      "funding_pnl": 0.8619,
-      "price_pnl": 0.0032,
-      "total_pnl": 0.8651,
+      "funding_pnl": 0.8621,
+      "price_pnl": 0.0023,
+      "total_pnl": 0.8644,
       "pct": 0.02,
       "n_payments": 2,
       "open_time": "29/05 14:46"
@@ -20,12 +20,24 @@
       "entry_price": 0.23,
       "current_price": 0.23,
       "usdt_in": 2115.48,
-      "funding_pnl": 0.4238,
-      "price_pnl": -0.0064,
-      "total_pnl": 0.4174,
+      "funding_pnl": 0.422,
+      "price_pnl": 0.0094,
+      "total_pnl": 0.4315,
       "pct": 0.02,
       "n_payments": 2,
       "open_time": "29/05 14:46"
+    },
+    {
+      "coin": "SUI",
+      "entry_price": 0.92,
+      "current_price": 0.92,
+      "usdt_in": 2362.36,
+      "funding_pnl": 0.0,
+      "price_pnl": -0.0002,
+      "total_pnl": -0.0002,
+      "pct": -0.0,
+      "n_payments": 0,
+      "open_time": "29/05 23:27"
     }
   ],
   "top_rates": [
@@ -43,8 +55,8 @@
     },
     {
       "coin": "SUI",
-      "rate": 9.60447725845e-05,
-      "apy": 10.51690259800275,
+      "rate": 0.0001,
+      "apy": 10.950000000000001,
       "next": 0.0
     },
     {
@@ -55,14 +67,14 @@
     },
     {
       "coin": "XRP",
-      "rate": 6.03417713976e-05,
-      "apy": 6.6074239680372004,
+      "rate": 6.53073031938e-05,
+      "apy": 7.1511496997211,
       "next": 0.0
     },
     {
       "coin": "ETH",
-      "rate": 5.94792120883e-05,
-      "apy": 6.51297372366885,
+      "rate": 5.88519598571e-05,
+      "apy": 6.44428960435245,
       "next": 0.0
     },
     {
