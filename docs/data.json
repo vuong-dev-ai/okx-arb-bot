@@ -1,42 +1,30 @@
 {
-  "updated_at": "29/05/2026 18:26",
-  "usdt_balance": 5830.054930266142,
-  "total_live_pnl": 0.9165,
+  "updated_at": "29/05/2026 23:07",
+  "usdt_balance": 9445.187060730193,
+  "total_live_pnl": 1.2669,
   "positions": [
     {
       "coin": "LTC",
       "entry_price": 51.59,
-      "current_price": 51.78,
+      "current_price": 51.49,
       "usdt_in": 4312.68,
-      "funding_pnl": 0.4329,
-      "price_pnl": -0.0165,
-      "total_pnl": 0.4164,
-      "pct": 0.01,
-      "n_payments": 1,
-      "open_time": "29/05 14:46"
-    },
-    {
-      "coin": "DOGE",
-      "entry_price": 0.1,
-      "current_price": 0.1,
-      "usdt_in": 3018.12,
-      "funding_pnl": 0.3028,
-      "price_pnl": -0.0067,
-      "total_pnl": 0.2962,
-      "pct": 0.01,
-      "n_payments": 1,
+      "funding_pnl": 0.8609,
+      "price_pnl": 0.0083,
+      "total_pnl": 0.8692,
+      "pct": 0.02,
+      "n_payments": 2,
       "open_time": "29/05 14:46"
     },
     {
       "coin": "ADA",
       "entry_price": 0.23,
-      "current_price": 0.23,
+      "current_price": 0.24,
       "usdt_in": 2115.48,
-      "funding_pnl": 0.212,
-      "price_pnl": -0.008,
-      "total_pnl": 0.204,
-      "pct": 0.01,
-      "n_payments": 1,
+      "funding_pnl": 0.4264,
+      "price_pnl": -0.0287,
+      "total_pnl": 0.3977,
+      "pct": 0.019,
+      "n_payments": 2,
       "open_time": "29/05 14:46"
     }
   ],
@@ -48,43 +36,43 @@
       "next": 0.0
     },
     {
-      "coin": "DOGE",
-      "rate": 0.0001,
-      "apy": 10.950000000000001,
-      "next": 0.0
-    },
-    {
       "coin": "ADA",
       "rate": 0.0001,
       "apy": 10.950000000000001,
       "next": 0.0
     },
     {
-      "coin": "BTC",
-      "rate": 0.0001,
-      "apy": 10.950000000000001,
+      "coin": "SUI",
+      "rate": 9.39641683887e-05,
+      "apy": 10.289076438562649,
       "next": 0.0
     },
     {
       "coin": "XRP",
-      "rate": 0.0001,
-      "apy": 10.950000000000001,
-      "next": 0.0
-    },
-    {
-      "coin": "SUI",
-      "rate": 0.0001,
-      "apy": 10.950000000000001,
-      "next": 0.0
-    },
-    {
-      "coin": "SOL",
-      "rate": 8.41948381268e-05,
-      "apy": 9.2193347748846,
+      "rate": 8.67521223383e-05,
+      "apy": 9.499357396043848,
       "next": 0.0
     },
     {
       "coin": "TRX",
+      "rate": 5e-05,
+      "apy": 5.4750000000000005,
+      "next": 0.0
+    },
+    {
+      "coin": "ETH",
+      "rate": 5.72595062399e-05,
+      "apy": 6.269915933269049,
+      "next": 0.0
+    },
+    {
+      "coin": "BTC",
+      "rate": 5.40678453441e-05,
+      "apy": 5.920429065178951,
+      "next": 0.0
+    },
+    {
+      "coin": "NEAR",
       "rate": 5e-05,
       "apy": 5.4750000000000005,
       "next": 0.0
