@@ -1,16 +1,16 @@
 {
-  "updated_at": "30/05/2026 21:39",
+  "updated_at": "30/05/2026 21:44",
   "usdt_balance": 8280.685085296578,
-  "total_live_pnl": 1.3142,
+  "total_live_pnl": 1.3225,
   "positions": [
     {
       "coin": "ADA",
       "entry_price": 0.23,
       "current_price": 0.24,
       "usdt_in": 2115.48,
-      "funding_pnl": 0.8545,
-      "price_pnl": -0.0366,
-      "total_pnl": 0.8179,
+      "funding_pnl": 0.8531,
+      "price_pnl": -0.0303,
+      "total_pnl": 0.8228,
       "pct": 0.039,
       "n_payments": 4,
       "open_time": "29/05 14:46"
@@ -18,11 +18,11 @@
     {
       "coin": "SUI",
       "entry_price": 0.92,
-      "current_price": 0.91,
+      "current_price": 0.9,
       "usdt_in": 2362.36,
-      "funding_pnl": 0.4664,
-      "price_pnl": 0.0327,
-      "total_pnl": 0.4992,
+      "funding_pnl": 0.4657,
+      "price_pnl": 0.0369,
+      "total_pnl": 0.5026,
       "pct": 0.021,
       "n_payments": 2,
       "open_time": "29/05 23:27"
