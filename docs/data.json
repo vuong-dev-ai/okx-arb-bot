@@ -1,18 +1,18 @@
 {
-  "updated_at": "30/05/2026 22:55",
+  "updated_at": "30/05/2026 23:00",
   "usdt_balance": 8280.685085296578,
-  "total_live_pnl": 1.3003,
+  "total_live_pnl": 2.0505,
   "positions": [
     {
       "coin": "ADA",
       "entry_price": 0.23,
       "current_price": 0.24,
       "usdt_in": 2115.48,
-      "funding_pnl": 0.8549,
-      "price_pnl": -0.0382,
-      "total_pnl": 0.8167,
-      "pct": 0.039,
-      "n_payments": 4,
+      "funding_pnl": 1.0677,
+      "price_pnl": -0.035,
+      "total_pnl": 1.0327,
+      "pct": 0.049,
+      "n_payments": 5,
       "open_time": "29/05 14:46"
     },
     {
@@ -20,11 +20,11 @@
       "entry_price": 0.92,
       "current_price": 0.91,
       "usdt_in": 2362.36,
-      "funding_pnl": 0.4686,
-      "price_pnl": 0.0207,
-      "total_pnl": 0.4894,
-      "pct": 0.021,
-      "n_payments": 2,
+      "funding_pnl": 0.7021,
+      "price_pnl": 0.0238,
+      "total_pnl": 0.7259,
+      "pct": 0.031,
+      "n_payments": 3,
       "open_time": "29/05 23:27"
     },
     {
@@ -32,11 +32,11 @@
       "entry_price": 0.1,
       "current_price": 0.1,
       "usdt_in": 2958.53,
-      "funding_pnl": 0.0,
-      "price_pnl": -0.0058,
-      "total_pnl": -0.0058,
-      "pct": -0.0,
-      "n_payments": 0,
+      "funding_pnl": 0.2963,
+      "price_pnl": -0.0044,
+      "total_pnl": 0.2919,
+      "pct": 0.01,
+      "n_payments": 1,
       "open_time": "30/05 21:25"
     }
   ],
