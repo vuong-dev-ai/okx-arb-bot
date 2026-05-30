@@ -1,28 +1,16 @@
 {
-  "updated_at": "30/05/2026 21:19",
-  "usdt_balance": 6667.288739485978,
-  "total_live_pnl": 2.9928,
+  "updated_at": "30/05/2026 21:25",
+  "usdt_balance": 11830.378638436578,
+  "total_live_pnl": 1.3323,
   "positions": [
-    {
-      "coin": "LTC",
-      "entry_price": 51.59,
-      "current_price": 52.73,
-      "usdt_in": 4312.68,
-      "funding_pnl": 1.7633,
-      "price_pnl": -0.0977,
-      "total_pnl": 1.6655,
-      "pct": 0.039,
-      "n_payments": 4,
-      "open_time": "29/05 14:46"
-    },
     {
       "coin": "ADA",
       "entry_price": 0.23,
       "current_price": 0.24,
       "usdt_in": 2115.48,
-      "funding_pnl": 0.8531,
-      "price_pnl": -0.0303,
-      "total_pnl": 0.8228,
+      "funding_pnl": 0.852,
+      "price_pnl": -0.0255,
+      "total_pnl": 0.8265,
       "pct": 0.039,
       "n_payments": 4,
       "open_time": "29/05 14:46"
@@ -32,15 +20,76 @@
       "entry_price": 0.92,
       "current_price": 0.9,
       "usdt_in": 2362.36,
-      "funding_pnl": 0.4652,
-      "price_pnl": 0.0392,
-      "total_pnl": 0.5044,
+      "funding_pnl": 0.4649,
+      "price_pnl": 0.0408,
+      "total_pnl": 0.5058,
       "pct": 0.021,
       "n_payments": 2,
       "open_time": "29/05 23:27"
+    },
+    {
+      "coin": "DOGE",
+      "entry_price": 0.1,
+      "current_price": 0.1,
+      "usdt_in": 2958.53,
+      "funding_pnl": 0.0,
+      "price_pnl": 0.0,
+      "total_pnl": 0.0,
+      "pct": 0.0,
+      "n_payments": 0,
+      "open_time": "30/05 21:25"
     }
   ],
-  "top_rates": [],
+  "top_rates": [
+    {
+      "coin": "ADA",
+      "rate": 0.0001,
+      "apy": 10.950000000000001,
+      "next": 0.0
+    },
+    {
+      "coin": "DOGE",
+      "rate": 0.0001,
+      "apy": 10.950000000000001,
+      "next": 0.0
+    },
+    {
+      "coin": "XRP",
+      "rate": 8.8648645903e-05,
+      "apy": 9.7070267263785,
+      "next": 0.0
+    },
+    {
+      "coin": "BNB",
+      "rate": 7.23427599277e-05,
+      "apy": 7.921532212083148,
+      "next": 0.0
+    },
+    {
+      "coin": "SUI",
+      "rate": 6.83938296399e-05,
+      "apy": 7.489124345569049,
+      "next": 0.0
+    },
+    {
+      "coin": "TRX",
+      "rate": 5e-05,
+      "apy": 5.4750000000000005,
+      "next": 0.0
+    },
+    {
+      "coin": "TON",
+      "rate": 4.61176949788e-05,
+      "apy": 5.0498876001786,
+      "next": 0.0
+    },
+    {
+      "coin": "NEAR",
+      "rate": 5e-05,
+      "apy": 5.4750000000000005,
+      "next": 0.0
+    }
+  ],
   "history": {
     "headers": [
       "Thời gian",
