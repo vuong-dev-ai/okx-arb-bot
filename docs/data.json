@@ -1,7 +1,7 @@
 {
-  "updated_at": "30/05/2026 07:13",
+  "updated_at": "30/05/2026 07:18",
   "usdt_balance": 6667.288739485978,
-  "total_live_pnl": 2.2132,
+  "total_live_pnl": 2.2091,
   "positions": [
     {
       "coin": "LTC",
@@ -20,9 +20,9 @@
       "entry_price": 0.23,
       "current_price": 0.23,
       "usdt_in": 2115.48,
-      "funding_pnl": 0.6325,
-      "price_pnl": 0.0126,
-      "total_pnl": 0.6451,
+      "funding_pnl": 0.6328,
+      "price_pnl": 0.011,
+      "total_pnl": 0.6438,
       "pct": 0.03,
       "n_payments": 3,
       "open_time": "29/05 14:46"
@@ -32,9 +32,9 @@
       "entry_price": 0.92,
       "current_price": 0.91,
       "usdt_in": 2362.36,
-      "funding_pnl": 0.2329,
-      "price_pnl": 0.0361,
-      "total_pnl": 0.269,
+      "funding_pnl": 0.2332,
+      "price_pnl": 0.033,
+      "total_pnl": 0.2662,
       "pct": 0.011,
       "n_payments": 1,
       "open_time": "29/05 23:27"
