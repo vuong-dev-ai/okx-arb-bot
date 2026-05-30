@@ -1,7 +1,7 @@
 {
-  "updated_at": "30/05/2026 10:03",
+  "updated_at": "30/05/2026 10:31",
   "usdt_balance": 6667.288739485978,
-  "total_live_pnl": 2.1173,
+  "total_live_pnl": 2.1454,
   "positions": [
     {
       "coin": "LTC",
@@ -20,10 +20,10 @@
       "entry_price": 0.23,
       "current_price": 0.24,
       "usdt_in": 2115.48,
-      "funding_pnl": 0.6474,
-      "price_pnl": -0.0747,
-      "total_pnl": 0.5727,
-      "pct": 0.027,
+      "funding_pnl": 0.6433,
+      "price_pnl": -0.0509,
+      "total_pnl": 0.5924,
+      "pct": 0.028,
       "n_payments": 3,
       "open_time": "29/05 14:46"
     },
@@ -32,64 +32,15 @@
       "entry_price": 0.92,
       "current_price": 0.91,
       "usdt_in": 2362.36,
-      "funding_pnl": 0.2352,
-      "price_pnl": 0.011,
-      "total_pnl": 0.2462,
-      "pct": 0.01,
+      "funding_pnl": 0.2344,
+      "price_pnl": 0.0202,
+      "total_pnl": 0.2546,
+      "pct": 0.011,
       "n_payments": 1,
       "open_time": "29/05 23:27"
     }
   ],
-  "top_rates": [
-    {
-      "coin": "LTC",
-      "rate": 0.0001,
-      "apy": 10.950000000000001,
-      "next": 0.0
-    },
-    {
-      "coin": "ADA",
-      "rate": 0.0001,
-      "apy": 10.950000000000001,
-      "next": 0.0
-    },
-    {
-      "coin": "SUI",
-      "rate": 0.0001,
-      "apy": 10.950000000000001,
-      "next": 0.0
-    },
-    {
-      "coin": "TRX",
-      "rate": 5e-05,
-      "apy": 5.4750000000000005,
-      "next": 0.0
-    },
-    {
-      "coin": "XRP",
-      "rate": 6.53073031938e-05,
-      "apy": 7.1511496997211,
-      "next": 0.0
-    },
-    {
-      "coin": "ETH",
-      "rate": 5.88519598571e-05,
-      "apy": 6.44428960435245,
-      "next": 0.0
-    },
-    {
-      "coin": "NEAR",
-      "rate": 5e-05,
-      "apy": 5.4750000000000005,
-      "next": 0.0
-    },
-    {
-      "coin": "DOT",
-      "rate": 5e-05,
-      "apy": 5.4750000000000005,
-      "next": 0.0
-    }
-  ],
+  "top_rates": [],
   "history": {
     "headers": [
       "Thời gian",
