@@ -1,5 +1,5 @@
 {
-  "updated_at": "30/05/2026 10:46",
+  "updated_at": "30/05/2026 10:47",
   "usdt_balance": 6667.288739485978,
   "total_live_pnl": 2.17,
   "positions": [
@@ -20,9 +20,9 @@
       "entry_price": 0.23,
       "current_price": 0.24,
       "usdt_in": 2115.48,
-      "funding_pnl": 0.6409,
-      "price_pnl": -0.0366,
-      "total_pnl": 0.6043,
+      "funding_pnl": 0.6406,
+      "price_pnl": -0.035,
+      "total_pnl": 0.6056,
       "pct": 0.029,
       "n_payments": 3,
       "open_time": "29/05 14:46"
@@ -32,9 +32,9 @@
       "entry_price": 0.92,
       "current_price": 0.91,
       "usdt_in": 2362.36,
-      "funding_pnl": 0.2331,
-      "price_pnl": 0.0341,
-      "total_pnl": 0.2672,
+      "funding_pnl": 0.2332,
+      "price_pnl": 0.0327,
+      "total_pnl": 0.266,
       "pct": 0.011,
       "n_payments": 1,
       "open_time": "29/05 23:27"
