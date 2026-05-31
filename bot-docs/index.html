@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OKX Bots · Hướng dẫn sử dụng</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/date-fns@3.6.0/cdn.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<style>
+:root {
+  --bg-0:#05060c; --bg-1:#0a0c14; --bg-2:#11141d;
+  --glass:rgba(255,255,255,0.025); --glass-hi:rgba(255,255,255,0.045);
+  --glass-bd:rgba(255,255,255,0.08); --glass-bd-hi:rgba(255,255,255,0.14);
+  --ink-1:#f3f4f6; --ink-2:#c7c9d1; --ink-3:#8b8d97; --ink-4:#5a5d68;
+  --cy:#22d3ee; --vi:#a78bfa; --mt:#34d399; --rs:#fb7185; --gd:#fbbf24; --bl:#60a5fa;
+  --gain:#34d399; --loss:#fb7185;
+  --r-md:14px; --r-lg:20px;
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+html,body { background:var(--bg-0); color:var(--ink-2);
+  font-family:'Inter',system-ui,sans-serif; font-size:15px;
+  -webkit-font-smoothing:antialiased; min-height:100vh; overflow-x:hidden; line-height:1.65; }
+
+.aurora { position:fixed; inset:0; z-index:-2; overflow:hidden; }
+.aurora::before, .aurora::after, .aurora .orb {
+  content:''; position:absolute; border-radius:50%;
+  filter:blur(120px); opacity:0.55; mix-blend-mode:screen;
+}
+.aurora::before { width:720px;height:720px; background:radial-gradient(circle,#1e3a8a 0%,transparent 65%); top:-200px;left:-180px; animation:d1 28s ease-in-out infinite; }
+.aurora::after  { width:640px;height:640px; background:radial-gradient(circle,#5b21b6 0%,transparent 65%); bottom:-180px;right:-160px; animation:d2 32s ease-in-out infinite; }
+.aurora .orb-1  { width:480px;height:480px; background:radial-gradient(circle,#0e7490 0%,transparent 70%); top:40%;left:55%; animation:d3 40s ease-in-out infinite; }
+@keyframes d1 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(120px,60px) scale(1.12)} }
+@keyframes d2 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(-100px,-80px) scale(1.08)} }
+@keyframes d3 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(-160px,100px) scale(1.15)} }
+.grain { position:fixed; inset:0; z-index:-1; pointer-events:none; opacity:0.035;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>"); }
+
+.layout { display:grid; grid-template-columns:240px 1fr; gap:0; min-height:100vh; max-width:1320px; margin:0 auto; }
+
+/* Sidebar */
+.side {
+  position:sticky; top:0; height:100vh;
+  padding:32px 22px;
+  border-right:1px solid var(--glass-bd);
+  backdrop-filter:blur(20px) saturate(140%);
+  -webkit-backdrop-filter:blur(20px) saturate(140%);
+  background:rgba(5,6,12,0.6);
+  overflow-y:auto;
+}
+.brand { display:flex; align-items:center; gap:11px; margin-bottom:28px; }
+.brand-mark {
+  width:38px;height:38px; display:grid; place-items:center; border-radius:11px;
+  background:radial-gradient(120% 120% at 0% 0%,rgba(34,211,238,0.35),transparent 55%),
+             radial-gradient(120% 120% at 100% 100%,rgba(167,139,250,0.35),transparent 55%),
+             rgba(255,255,255,0.04);
+  border:1px solid var(--glass-bd-hi);
+  box-shadow:0 4px 20px rgba(34,211,238,0.18);
+}
+.brand-mark svg { width:22px;height:22px; }
+.brand-name { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:16px; color:var(--ink-1); letter-spacing:-0.02em; line-height:1; }
+.brand-name em { font-style:normal; background:linear-gradient(135deg,var(--cy),var(--vi)); -webkit-background-clip:text; background-clip:text; color:transparent; }
+.brand-sub { font-size:10.5px; color:var(--ink-3); letter-spacing:0.18em; text-transform:uppercase; margin-top:4px; font-weight:500; }
+
+.nav { display:flex; flex-direction:column; gap:2px; }
+.nav-h { font-size:10.5px; color:var(--ink-4); letter-spacing:0.16em; text-transform:uppercase;
+         font-weight:700; margin:18px 8px 8px; }
+.nav a {
+  display:block; padding:7px 12px; color:var(--ink-3); font-size:13.5px;
+  border-radius:8px; text-decoration:none; transition:all .15s;
+  border-left:2px solid transparent;
+}
+.nav a:hover { color:var(--ink-1); background:var(--glass); }
+.nav a.active { color:var(--ink-1); background:var(--glass-hi); border-left-color:var(--cy); }
+
+/* Main */
+.main { padding:48px 56px 80px; max-width:980px; }
+section { margin-bottom:64px; scroll-margin-top:24px; }
+section:last-child { margin-bottom:24px; }
+
+h1 { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:42px;
+     color:var(--ink-1); letter-spacing:-0.025em; line-height:1.1; margin-bottom:14px; }
+h1 .grad { background:linear-gradient(135deg,var(--cy),var(--vi)); -webkit-background-clip:text; background-clip:text; color:transparent; }
+h2 { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:28px;
+     color:var(--ink-1); letter-spacing:-0.02em; margin-bottom:16px; padding-bottom:10px;
+     border-bottom:1px solid var(--glass-bd); display:flex; align-items:center; gap:12px; }
+h2::before { content:''; width:5px; height:22px; border-radius:3px; background:linear-gradient(180deg,var(--cy),var(--vi)); }
+h3 { font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:19px;
+     color:var(--ink-1); margin:24px 0 12px; }
+h4 { font-weight:600; font-size:14px; color:var(--ink-2); text-transform:uppercase;
+     letter-spacing:0.08em; margin:18px 0 10px; }
+
+p, li { color:var(--ink-2); margin-bottom:12px; }
+li { margin-bottom:6px; }
+ul, ol { padding-left:24px; }
+strong { color:var(--ink-1); font-weight:600; }
+em { color:var(--cy); font-style:normal; font-weight:500; }
+
+.lead { font-size:17px; color:var(--ink-2); margin-bottom:24px; }
+
+a.link { color:var(--cy); text-decoration:none; border-bottom:1px dashed transparent; transition:border .2s; }
+a.link:hover { border-bottom-color:var(--cy); }
+
+/* Hero */
+.hero {
+  margin-bottom:48px;
+  padding:32px 36px;
+  background:var(--glass);
+  backdrop-filter:blur(20px) saturate(140%);
+  -webkit-backdrop-filter:blur(20px) saturate(140%);
+  border:1px solid var(--glass-bd);
+  border-radius:24px;
+  position:relative; overflow:hidden;
+}
+.hero::before { content:''; position:absolute; top:-40%; right:-10%; width:60%; height:180%;
+                background:radial-gradient(circle,rgba(34,211,238,0.18),transparent 60%); pointer-events:none; }
+.hero-meta { display:flex; gap:18px; margin-top:18px; flex-wrap:wrap; font-size:13px; color:var(--ink-3); }
+.hero-meta span { font-family:'JetBrains Mono',monospace; padding:5px 11px; background:var(--glass-hi); border:1px solid var(--glass-bd); border-radius:6px; }
+
+/* Cards */
+.card {
+  background:var(--glass);
+  backdrop-filter:blur(20px) saturate(140%);
+  -webkit-backdrop-filter:blur(20px) saturate(140%);
+  border:1px solid var(--glass-bd);
+  border-radius:var(--r-lg);
+  padding:22px 26px;
+  margin-bottom:18px;
+  position:relative; overflow:hidden;
+}
+.card-tint-cy { border-color:rgba(34,211,238,0.18); }
+.card-tint-cy::before { content:''; position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(135deg,rgba(34,211,238,0.06),transparent); opacity:1; }
+.card-tint-vi { border-color:rgba(167,139,250,0.18); }
+.card-tint-vi::before { content:''; position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(135deg,rgba(167,139,250,0.06),transparent); opacity:1; }
+.card-tint-gd { border-color:rgba(251,191,36,0.22); }
+.card-tint-gd::before { content:''; position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(135deg,rgba(251,191,36,0.06),transparent); opacity:1; }
+.card-tint-rs { border-color:rgba(251,113,133,0.22); }
+.card-tint-rs::before { content:''; position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(135deg,rgba(251,113,133,0.06),transparent); opacity:1; }
+
+.card > * { position:relative; z-index:1; }
+
+.bot-head { display:flex; align-items:flex-start; gap:18px; margin-bottom:16px; }
+.bot-icon {
+  width:54px; height:54px; flex-shrink:0; display:grid; place-items:center;
+  border-radius:14px; border:1px solid var(--glass-bd-hi);
+  background:var(--glass-hi);
+}
+.bot-icon.cy { color:var(--cy); background:rgba(34,211,238,0.10); }
+.bot-icon.vi { color:var(--vi); background:rgba(167,139,250,0.10); }
+.bot-title { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:24px;
+             color:var(--ink-1); letter-spacing:-0.015em; line-height:1.15; }
+.bot-sub { font-size:13px; color:var(--ink-3); margin-top:4px; font-family:'JetBrains Mono',monospace; }
+
+/* Steps */
+.steps { display:grid; gap:14px; margin:18px 0 8px; }
+.step { display:flex; gap:14px; padding:12px 14px; background:rgba(255,255,255,0.018);
+        border-left:2px solid var(--cy); border-radius:0 10px 10px 0; }
+.step-n { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:14px;
+          color:var(--cy); flex-shrink:0; width:24px; text-align:center; }
+.step-c { font-size:13.5px; color:var(--ink-2); }
+
+/* Table */
+table.tbl {
+  width:100%; border-collapse:collapse; margin:14px 0;
+  background:rgba(0,0,0,0.18); border:1px solid var(--glass-bd); border-radius:12px; overflow:hidden;
+}
+table.tbl th, table.tbl td { padding:11px 14px; text-align:left; font-size:13.5px; }
+table.tbl th { color:var(--ink-3); font-size:11px; font-weight:600;
+               text-transform:uppercase; letter-spacing:0.1em;
+               background:rgba(255,255,255,0.025); border-bottom:1px solid var(--glass-bd); }
+table.tbl td { border-bottom:1px solid rgba(255,255,255,0.04); color:var(--ink-2); font-variant-numeric:tabular-nums; }
+table.tbl tr:last-child td { border-bottom:none; }
+table.tbl td strong { color:var(--ink-1); }
+table.tbl .gain { color:var(--mt); }
+table.tbl .loss { color:var(--rs); }
+table.tbl .neutral { color:var(--gd); }
+table.tbl .num { font-family:'JetBrains Mono',monospace; }
+
+/* Code */
+code, .code {
+  font-family:'JetBrains Mono',monospace; font-size:12.5px;
+  background:rgba(0,0,0,0.4); border:1px solid var(--glass-bd);
+  padding:1.5px 7px; border-radius:5px; color:var(--cy);
+}
+pre {
+  font-family:'JetBrains Mono',monospace; font-size:12.5px;
+  background:rgba(0,0,0,0.45); border:1px solid var(--glass-bd);
+  padding:14px 18px; border-radius:10px; overflow-x:auto;
+  color:var(--ink-2); line-height:1.55; margin:12px 0;
+}
+pre code { background:none; border:none; padding:0; color:inherit; }
+
+/* Notice */
+.notice {
+  display:flex; gap:14px; padding:14px 18px; border-radius:12px;
+  margin:14px 0; align-items:flex-start;
+}
+.notice-icon { width:30px; height:30px; flex-shrink:0; display:grid; place-items:center; border-radius:8px; }
+.notice-tip  { background:rgba(34,211,238,0.06); border:1px solid rgba(34,211,238,0.25); }
+.notice-tip  .notice-icon { background:rgba(34,211,238,0.15); color:var(--cy); }
+.notice-warn { background:rgba(251,191,36,0.06); border:1px solid rgba(251,191,36,0.25); }
+.notice-warn .notice-icon { background:rgba(251,191,36,0.15); color:var(--gd); }
+.notice-danger { background:rgba(251,113,133,0.06); border:1px solid rgba(251,113,133,0.3); }
+.notice-danger .notice-icon { background:rgba(251,113,133,0.15); color:var(--rs); }
+.notice strong { color:var(--ink-1); }
+.notice-title { font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:13px; text-transform:uppercase;
+                letter-spacing:0.08em; margin-bottom:3px; }
+
+/* Two col */
+.two-col { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin:16px 0; }
+@media (max-width:900px) { .two-col { grid-template-columns:1fr; } }
+
+/* Stat row */
+.stat-row { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin:14px 0 18px; }
+.stat-mini { background:var(--glass-hi); border:1px solid var(--glass-bd); border-radius:12px; padding:14px; }
+.stat-mini .l { font-size:10.5px; color:var(--ink-3); text-transform:uppercase; letter-spacing:0.1em; font-weight:600; margin-bottom:4px; }
+.stat-mini .v { font-family:'Space Grotesk',sans-serif; font-size:20px; font-weight:700; color:var(--ink-1); }
+.stat-mini .vc { color:var(--cy); }
+.stat-mini .vv { color:var(--vi); }
+.stat-mini .vg { color:var(--mt); }
+.stat-mini .vr { color:var(--rs); }
+@media (max-width:760px) { .stat-row { grid-template-columns:1fr 1fr; } }
+
+/* Equity chart */
+.equity-wrap { background:var(--glass); backdrop-filter:blur(20px) saturate(140%);
+  -webkit-backdrop-filter:blur(20px) saturate(140%);
+  border:1px solid var(--glass-bd); border-radius:var(--r-lg); padding:24px 26px 18px; margin-bottom:18px; }
+.equity-head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
+.equity-title { font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:16px; color:var(--ink-1); }
+.equity-sub { font-size:12px; color:var(--ink-3); font-family:'JetBrains Mono',monospace; }
+.equity-legend { display:flex; gap:14px; flex-wrap:wrap; }
+.legend-dot { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--ink-2); }
+.legend-dot::before { content:''; width:10px; height:10px; border-radius:3px; background:var(--cy); }
+.legend-dot.arb::before   { background:var(--cy); }
+.legend-dot.trend::before { background:var(--vi); }
+.legend-dot.total::before { background:var(--gd); }
+.equity-canvas-box { position:relative; height:340px; width:100%; }
+.equity-empty { color:var(--ink-3); font-size:13px; text-align:center; padding:80px 0; font-family:'JetBrains Mono',monospace; }
+
+/* FAQ */
+.faq { border:1px solid var(--glass-bd); border-radius:12px; overflow:hidden; }
+details.faq-item { border-bottom:1px solid var(--glass-bd); }
+details.faq-item:last-child { border-bottom:none; }
+details.faq-item > summary {
+  list-style:none; cursor:pointer; padding:14px 18px; font-size:14.5px; font-weight:600; color:var(--ink-1);
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+}
+details.faq-item > summary::-webkit-details-marker { display:none; }
+details.faq-item > summary::after {
+  content:'+'; font-family:'JetBrains Mono',monospace; color:var(--cy); font-size:18px;
+  transition:transform .2s;
+}
+details.faq-item[open] > summary::after { content:'−'; }
+details.faq-item > summary:hover { background:rgba(255,255,255,0.02); }
+.faq-body { padding:0 18px 16px; color:var(--ink-2); font-size:13.5px; }
+.faq-body p { margin-bottom:8px; }
+
+/* Footer */
+footer { margin-top:48px; padding-top:24px; border-top:1px solid var(--glass-bd);
+         color:var(--ink-3); font-size:12px; }
+
+/* Mobile */
+@media (max-width:900px) {
+  .layout { grid-template-columns:1fr; }
+  .side { position:relative; height:auto; border-right:none; border-bottom:1px solid var(--glass-bd); padding:18px; }
+  .main { padding:28px 22px 60px; }
+  h1 { font-size:32px; }
+  .stat-row { grid-template-columns:repeat(2,1fr); }
+}
+
+::-webkit-scrollbar { width:6px; height:6px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:linear-gradient(180deg,rgba(167,139,250,0.35),rgba(34,211,238,0.35)); border-radius:3px; }
+</style>
+</head>
+<body>
+
+<div class="aurora">
+  <div class="orb orb-1"></div>
+</div>
+<div class="grain"></div>
+
+<div class="layout">
+
+  <aside class="side">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none">
+          <defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#22d3ee"/><stop offset="100%" stop-color="#a78bfa"/>
+          </linearGradient></defs>
+          <path d="M12 2L21 7v10l-9 5-9-5V7l9-5z" stroke="url(#g1)" stroke-width="1.8" stroke-linejoin="round"/>
+          <path d="M8 10l4 2 4-2M12 12v6" stroke="url(#g1)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-name">Aurora · <em>Bots</em></div>
+        <div class="brand-sub">Docs &amp; Guide</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-h">Tổng quan</div>
+      <a href="#overview" class="active">Hai bot là gì?</a>
+      <a href="#equity">Biểu đồ tài sản 30 ngày</a>
+      <a href="#how-they-earn">Cách kiếm tiền</a>
+      <a href="#compare">So sánh</a>
+
+      <div class="nav-h">Bot 1 · Funding Arb</div>
+      <a href="#arb-how">Cơ chế</a>
+      <a href="#arb-math">Toán lợi nhuận</a>
+      <a href="#arb-params">Tham số</a>
+
+      <div class="nav-h">Bot 2 · Trend Following</div>
+      <a href="#trend-how">Cơ chế</a>
+      <a href="#trend-math">Toán lợi nhuận</a>
+      <a href="#trend-params">Tham số</a>
+
+      <div class="nav-h">Sử dụng</div>
+      <a href="#setup">Cài đặt</a>
+      <a href="#launch">Khởi động</a>
+      <a href="#dashboard">Đọc dashboard</a>
+      <a href="#troubleshoot">Sự cố</a>
+
+      <div class="nav-h">Khác</div>
+      <a href="#faq">FAQ</a>
+      <a href="#disclaimer">Disclaimer</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+
+    <!-- ═══ HERO ═══ -->
+    <div class="hero">
+      <h1>Aurora <span class="grad">OKX Bots</span></h1>
+      <p class="lead">Hai bot tự động trên sàn OKX — một bot funding arbitrage (delta-neutral, thu phí funding) và một bot trend-following (định hướng, theo xu hướng trung hạn). Dashboard real-time, analytics tự học, an toàn vận hành.</p>
+      <div class="hero-meta">
+        <span>Python · Flask · OKX SDK</span>
+        <span>WebSocket realtime</span>
+        <span>SQLite analytics</span>
+        <span>Auto-reconcile</span>
+      </div>
+    </div>
+
+    <!-- ═══ OVERVIEW ═══ -->
+    <section id="overview">
+      <h2>Hai bot là gì?</h2>
+      <p>Hệ thống gồm <strong>hai bot độc lập</strong>, mỗi bot là một dự án Python + Flask riêng biệt. Chúng dùng chung API key OKX nhưng chạy port khác nhau (5000 và 5001) nên có thể chạy đồng thời.</p>
+
+      <div class="two-col">
+        <div class="card card-tint-cy">
+          <div class="bot-head">
+            <div class="bot-icon cy">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h6m6 0h6M9 6v12m6-12v12"/><circle cx="12" cy="12" r="9"/></svg>
+            </div>
+            <div>
+              <div class="bot-title">OKX Funding Arb</div>
+              <div class="bot-sub">localhost:5000 · delta-neutral</div>
+            </div>
+          </div>
+          <p>Mua spot + short futures cùng giá trị → vị thế <em>delta-neutral</em> (giá lên/xuống không ảnh hưởng). Thu phí funding mỗi 8h từ phía futures.</p>
+          <ul>
+            <li><strong>Rủi ro</strong>: thấp (chủ yếu là phí giao dịch, slippage, funding âm)</li>
+            <li><strong>Yield</strong>: 1–3% / tháng (8–25% APY)</li>
+            <li><strong>Vốn tối thiểu</strong>: $50–100 USDT</li>
+          </ul>
+        </div>
+
+        <div class="card card-tint-vi">
+          <div class="bot-head">
+            <div class="bot-icon vi">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 17l6-6 4 4 8-8M21 11V3M21 3h-8"/></svg>
+            </div>
+            <div>
+              <div class="bot-title">OKX Trend Following</div>
+              <div class="bot-sub">localhost:5001 · directional</div>
+            </div>
+          </div>
+          <p>Phát hiện trend trung hạn (khung 4H) qua EMA crossover + ADX filter. Vào lệnh LONG khi uptrend, SHORT khi downtrend. Thoát bằng ATR trailing stop.</p>
+          <ul>
+            <li><strong>Rủi ro</strong>: trung-cao (định hướng giá, có drawdown 20–50%)</li>
+            <li><strong>Yield</strong>: 15–40% APY (rất biến động)</li>
+            <li><strong>Vốn tối thiểu</strong>: $200+ USDT</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ EQUITY CHART ═══ -->
+    <section id="equity">
+      <h2>Biểu đồ tài sản 30 ngày</h2>
+      <p>Cumulative PnL (USDT) của 2 bot trong 30 ngày gần nhất — dữ liệu thực từ <code>analytics.db</code> mỗi bot. Cập nhật bằng cách chạy <code>python build_equity.py</code>.</p>
+
+      <div class="stat-row" id="equity-stats">
+        <div class="stat-mini"><div class="l">Tổng PnL 30D</div><div class="v vg" id="eq-total">—</div></div>
+        <div class="stat-mini"><div class="l">Arb PnL</div><div class="v vc" id="eq-arb">—</div></div>
+        <div class="stat-mini"><div class="l">Trend PnL</div><div class="v vv" id="eq-trend">—</div></div>
+        <div class="stat-mini"><div class="l">Max Drawdown</div><div class="v vr" id="eq-dd">—</div></div>
+      </div>
+
+      <div class="equity-wrap">
+        <div class="equity-head">
+          <div>
+            <div class="equity-title">Cumulative PnL</div>
+            <div class="equity-sub" id="eq-range">đang tải...</div>
+          </div>
+          <div class="equity-legend">
+            <span class="legend-dot arb">Funding Arb</span>
+            <span class="legend-dot trend">Trend Following</span>
+            <span class="legend-dot total">Tổng cộng</span>
+          </div>
+        </div>
+        <div class="equity-canvas-box">
+          <canvas id="equity-chart"></canvas>
+          <div id="equity-empty" class="equity-empty" style="display:none">Chưa có dữ liệu — chạy <code>python build_equity.py</code> để tạo.</div>
+        </div>
+      </div>
+
+      <div class="notice notice-tip" id="eq-info" style="display:none">
+        <div class="notice-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+        </div>
+        <div>
+          <div class="notice-title">Biểu đồ snapshot, không live</div>
+          Dữ liệu được build 1 lần bởi <code>build_equity.py</code>. Chạy lại script bất kỳ lúc nào để cập nhật. Để xem realtime PnL, mở dashboard <a class="link" href="http://localhost:5000">arb</a> hoặc <a class="link" href="http://localhost:5001">trending</a>.
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ HOW THEY EARN ═══ -->
+    <section id="how-they-earn">
+      <h2>Cách kiếm tiền (nền tảng)</h2>
+
+      <h3>Funding rate là gì?</h3>
+      <p>Trên thị trường futures vĩnh viễn (perpetual swap), khi giá futures lệch khỏi giá spot, sàn áp dụng "funding fee" mỗi 8h để kéo 2 giá về cân bằng:</p>
+      <ul>
+        <li><strong>Funding dương</strong> (giá futures &gt; spot): <em>người long trả phí cho người short</em></li>
+        <li><strong>Funding âm</strong> (giá futures &lt; spot): <em>người short trả phí cho người long</em></li>
+      </ul>
+      <p>Trên OKX, các đồng altcoin (DOGE, PEPE, ARB...) thường có funding dương cao trong sóng tăng — đây là alpha mà <strong>Bot 1</strong> khai thác.</p>
+
+      <h3>Trend là gì?</h3>
+      <p>Khi giá có xu hướng rõ ràng (lên hoặc xuống) trong nhiều ngày/tuần, ai vào lệnh đúng hướng sớm và giữ cho đến khi trend đảo — sẽ có lãi. <strong>Bot 2</strong> phát hiện trend bằng giao cắt EMA + sức mạnh trend (ADX) trên khung 4H, vào lệnh và quản trị rủi ro bằng ATR stop.</p>
+    </section>
+
+    <!-- ═══ COMPARISON ═══ -->
+    <section id="compare">
+      <h2>So sánh hai bot</h2>
+
+      <table class="tbl">
+        <thead><tr>
+          <th>Tiêu chí</th>
+          <th>Funding Arb</th>
+          <th>Trend Following</th>
+        </tr></thead>
+        <tbody>
+          <tr><td><strong>Hướng giao dịch</strong></td><td>Delta-neutral (không hướng)</td><td>Directional LONG hoặc SHORT</td></tr>
+          <tr><td><strong>Khung thời gian</strong></td><td>8 giờ (chu kỳ funding)</td><td>4 giờ (medium-term)</td></tr>
+          <tr><td><strong>Rủi ro</strong></td><td class="gain">Thấp</td><td class="neutral">Trung-cao</td></tr>
+          <tr><td><strong>Drawdown tối đa thực tế</strong></td><td>~5%</td><td class="loss">30–60%</td></tr>
+          <tr><td><strong>Win rate kỳ vọng</strong></td><td>~85% (mỗi chu kỳ funding)</td><td>30–45% (mỗi trade)</td></tr>
+          <tr><td><strong>Avg winner / loser</strong></td><td>≈1:1 (nhỏ đều)</td><td>2.5:1 (winner lớn hơn loser nhiều)</td></tr>
+          <tr><td><strong>Yield kỳ vọng/năm</strong></td><td class="gain">8–25%</td><td class="gain">15–40%</td></tr>
+          <tr><td><strong>Yield kỳ vọng/tháng</strong></td><td class="gain">1–3%</td><td>−5% đến +8% (rất biến động)</td></tr>
+          <tr><td><strong>Vốn tối thiểu khả thi</strong></td><td>$50</td><td>$200</td></tr>
+          <tr><td><strong>Số lần giao dịch/tháng</strong></td><td>20–50 (vào/ra liên tục)</td><td>4–10 (giữ lâu hơn)</td></tr>
+          <tr><td><strong>Phụ thuộc thị trường</strong></td><td>Cần funding rate &gt; 0</td><td>Cần thị trường có trend (không sideway)</td></tr>
+          <tr><td><strong>Lựa chọn nếu bạn...</strong></td><td>Mới, ít vốn, thận trọng</td><td>Có vốn, chịu được drawdown</td></tr>
+        </tbody>
+      </table>
+
+      <div class="notice notice-tip">
+        <div class="notice-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+        </div>
+        <div>
+          <div class="notice-title">Có thể chạy song song</div>
+          Hai bot độc lập, cùng tài khoản OKX. Funding bot mua spot/short swap; trending bot chỉ giao dịch swap directional. Vốn sẽ chia theo nhu cầu — gợi ý 60–70% funding arb, 30–40% trend follow.
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ ARB BOT ═══ -->
+    <section id="arb-how">
+      <h2>Bot 1 · Funding Arbitrage — Cơ chế</h2>
+
+      <h3>Logic vào lệnh</h3>
+      <ol>
+        <li>Scan 21 đồng top OKX (BTC, ETH, SOL, BNB, DOGE...) mỗi 5 phút</li>
+        <li>Lấy funding rate hiện tại của từng đồng (chu kỳ 8h)</li>
+        <li>Rank lại bằng <strong>điểm lịch sử</strong> (analytics tự thu thập) — coin đã từng lãi tốt được ưu tiên</li>
+        <li>Với coin top: nếu rate ≥ <code>0.01%/8h</code> (≈11% APY tối thiểu)<br>→ mua <code>30% balance</code> spot + short cùng giá trị futures isolated 5×</li>
+        <li>Mở tối đa 3 vị thế đồng thời</li>
+      </ol>
+
+      <h3>Logic thoát lệnh</h3>
+      <ul>
+        <li><strong>Auto exit</strong>: funding rate flip về âm → đóng cả 2 chân</li>
+        <li><strong>Manual exit</strong>: nhấn nút "Đóng" trên dashboard</li>
+        <li><strong>Reconcile</strong>: tự sync với OKX mỗi 2.5 phút — phát hiện vị thế đã đóng bên ngoài</li>
+      </ul>
+
+      <h3>Tại sao delta-neutral?</h3>
+      <p>Giá BTC tăng 10% → futures short lỗ 10%, spot lãi 10% → <em>tổng PnL từ giá = 0</em>. Bạn chỉ nhận được funding fee, không bị ảnh hưởng bởi biến động giá. Đây là chiến lược "market-neutral" cổ điển — rủi ro chính chỉ còn:</p>
+      <ul>
+        <li>Phí giao dịch (~0.3% round-trip) — phải bù bằng funding</li>
+        <li>Funding flip về âm trước khi nhận đủ payout</li>
+        <li>Lệnh không khớp đồng thời (chân kia thực thi chậm) → exposure tạm thời</li>
+      </ul>
+    </section>
+
+    <section id="arb-math">
+      <h2>Bot 1 · Toán lợi nhuận</h2>
+
+      <p>Giả sử <strong>balance = $1,000 USDT</strong>, bot mở 3 vị thế = 90% vốn = $900 deploy.</p>
+
+      <table class="tbl">
+        <thead><tr><th>Kịch bản</th><th>Rate TB/8h</th><th>Funding/ngày</th><th>Funding/tháng (gross)</th><th>Phí TB</th><th class="gain">NET/tháng</th><th>APY ước tính</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Bảo thủ</strong></td><td class="num">0.02%</td><td class="num">$0.54</td><td class="num">$16.2</td><td class="num loss">−$5</td><td class="num gain">$11 (1.1%)</td><td class="num">~14%</td></tr>
+          <tr><td><strong>Trung bình</strong></td><td class="num">0.04%</td><td class="num">$1.08</td><td class="num">$32.4</td><td class="num loss">−$6</td><td class="num gain">$26 (2.6%)</td><td class="num">~36%</td></tr>
+          <tr><td><strong>Lạc quan</strong></td><td class="num">0.07%</td><td class="num">$1.89</td><td class="num">$56.7</td><td class="num loss">−$8</td><td class="num gain">$49 (4.9%)</td><td class="num">~78%</td></tr>
+          <tr><td><strong>Xấu</strong></td><td class="num">0.005%</td><td class="num">$0.14</td><td class="num">$4.05</td><td class="num loss">−$5</td><td class="num loss">−$1 (−0.1%)</td><td class="num loss">~−1%</td></tr>
+        </tbody>
+      </table>
+
+      <p>Funding rate trung bình của OKX trong 6 tháng gần nhất (theo dữ liệu công khai): <strong>0.02–0.04%/8h</strong> trên các altcoin top. Vậy <em>kỳ vọng thực tế: 1–3%/tháng</em>, tương đương <strong>14–40% APY</strong>.</p>
+
+      <div class="notice notice-warn">
+        <div class="notice-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 9v4M12 17h.01M10.3 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+        </div>
+        <div>
+          <div class="notice-title">Lợi nhuận không cộng dồn tuyến tính</div>
+          Đây là chiến lược <em>market-condition dependent</em>. Khi thị trường flat/giảm, funding rate có thể âm cả tháng — bot không có gì để chạy. Sách lược: đặt mục tiêu hợp lý, không kỳ vọng kiếm tiền tháng nào cũng như nhau.
+        </div>
+      </div>
+    </section>
+
+    <section id="arb-params">
+      <h2>Bot 1 · Tham số (file <code>strategy.py</code>)</h2>
+      <table class="tbl">
+        <thead><tr><th>Biến</th><th>Mặc định</th><th>Ý nghĩa</th></tr></thead>
+        <tbody>
+          <tr><td><code>MIN_FUNDING_RATE</code></td><td class="num">0.0001</td><td>0.01%/8h — ngưỡng tối thiểu để vào lệnh</td></tr>
+          <tr><td><code>POSITION_PCT</code></td><td class="num">0.30</td><td>30% balance / vị thế (3 vị thế = 90% deploy)</td></tr>
+          <tr><td><code>MIN_USDT</code></td><td class="num">15.0</td><td>Vốn tối thiểu / vị thế ($)</td></tr>
+          <tr><td><code>LEVERAGE</code></td><td class="num">5</td><td>Đòn bẩy futures isolated</td></tr>
+          <tr><td><code>MAX_POS</code></td><td class="num">3</td><td>Số vị thế đồng thời tối đa</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ═══ TREND BOT ═══ -->
+    <section id="trend-how">
+      <h2>Bot 2 · Trend Following — Cơ chế</h2>
+
+      <h3>Indicators dùng</h3>
+      <ul>
+        <li><strong>EMA 21</strong> (fast): trung bình động hàm mũ ngắn hạn (~3.5 ngày)</li>
+        <li><strong>EMA 55</strong> (slow): trung bình động dài hơn (~9 ngày)</li>
+        <li><strong>ADX 14</strong>: đo độ mạnh trend, &gt;20 = trend đủ mạnh</li>
+        <li><strong>ATR 14</strong>: đo biến động — dùng để đặt stop loss đúng kích cỡ</li>
+      </ul>
+
+      <h3>Logic vào lệnh</h3>
+      <ol>
+        <li>Mỗi 4H, scan 19 đồng watchlist</li>
+        <li><strong>LONG signal</strong>: EMA21 cắt LÊN EMA55 + ADX ≥ 20 + lịch sử coin không quá tệ (score &gt; −2)</li>
+        <li><strong>SHORT signal</strong>: EMA21 cắt XUỐNG EMA55 + ADX ≥ 20 + score &gt; −2</li>
+        <li>Position sizing theo ATR: rủi ro 1.5% balance / trade, stop = 2×ATR từ entry</li>
+      </ol>
+
+      <h3>Logic thoát lệnh</h3>
+      <ul>
+        <li><strong>Trailing stop</strong>: ratchet theo 3×ATR — giá càng đi thuận, stop càng kéo theo</li>
+        <li><strong>Hit stop</strong>: giá chạm stop → đóng ngay</li>
+        <li><strong>Manual</strong>: nút Đóng trên dashboard</li>
+      </ul>
+
+      <div class="notice notice-tip">
+        <div class="notice-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 17l6-6 4 4 8-8"/></svg>
+        </div>
+        <div>
+          <div class="notice-title">Phân biệt trend với pullback</div>
+          ADX filter là chìa khoá — nó tách "thị trường có trend" khỏi "thị trường sideway". EMA crossover trong sideway sẽ tạo whipsaw (vào ra liên tục, lỗ phí). ADX &gt; 20 cắt được phần lớn whipsaws.
+        </div>
+      </div>
+    </section>
+
+    <section id="trend-math">
+      <h2>Bot 2 · Toán lợi nhuận</h2>
+
+      <p>Trend-following là chiến lược <strong>positive expectancy</strong> nhưng <strong>negative skew</strong> — nhiều trade nhỏ thua, ít trade lớn thắng. Backtest trên crypto 2018–2024 cho hệ EMA+ADX trên khung 4H:</p>
+
+      <div class="stat-row">
+        <div class="stat-mini"><div class="l">Win rate</div><div class="v vc">35%</div></div>
+        <div class="stat-mini"><div class="l">Avg winner</div><div class="v vg">+8%</div></div>
+        <div class="stat-mini"><div class="l">Avg loser</div><div class="v vr">−3%</div></div>
+        <div class="stat-mini"><div class="l">Expectancy/trade</div><div class="v vg">+0.85%</div></div>
+      </div>
+
+      <p>Bot mở trung bình ~6 trades/tháng. Tính ra:</p>
+      <ul>
+        <li><strong>6 trades × +0.85% expectancy × 30% notional/trade</strong> = ~1.5%/tháng kỳ vọng</li>
+        <li>Nhưng phương sai cao: tháng tốt +8%, tháng xấu −6%</li>
+        <li>APY trên backtest dài hạn: <strong>15–40%</strong></li>
+        <li>Drawdown tối đa trên backtest: <strong>30–50%</strong> (yêu cầu vốn rỗi để chịu)</li>
+      </ul>
+
+      <table class="tbl">
+        <thead><tr><th>Thị trường</th><th>Hiệu suất</th><th>Lý do</th></tr></thead>
+        <tbody>
+          <tr><td class="gain"><strong>Strong bull/bear trend</strong></td><td class="gain">+5 đến +15%/tháng</td><td>Trade thuận chiều, trailing kéo dài winner</td></tr>
+          <tr><td class="neutral"><strong>Sideway/choppy</strong></td><td class="loss">−2 đến −5%/tháng</td><td>Whipsaws, vào ra nhanh, mất phí</td></tr>
+          <tr><td class="gain"><strong>Trend mạnh + ít pullback</strong></td><td class="gain">+10 đến +20%/tháng</td><td>Lý tưởng cho hệ này (rare)</td></tr>
+          <tr><td class="loss"><strong>Đảo chiều đột ngột</strong></td><td class="loss">−5 đến −10%/tháng</td><td>Stop bị ăn liên tục</td></tr>
+        </tbody>
+      </table>
+
+      <div class="notice notice-danger">
+        <div class="notice-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 9v4M12 17h.01M10.3 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+        </div>
+        <div>
+          <div class="notice-title">Đừng nhân đôi vốn trong 1 tháng</div>
+          Trend following không nhân vốn nhanh. Bạn có thể mất 30–50% trước khi kiếm lại. Chỉ dùng vốn mà bạn <em>thật sự sẵn sàng mất nửa</em>.
+        </div>
+      </div>
+    </section>
+
+    <section id="trend-params">
+      <h2>Bot 2 · Tham số (file <code>strategy.py</code>)</h2>
+      <table class="tbl">
+        <thead><tr><th>Biến</th><th>Mặc định</th><th>Ý nghĩa</th></tr></thead>
+        <tbody>
+          <tr><td><code>TIMEFRAME</code></td><td class="num">"4H"</td><td>Khung nến (đổi sang "6H", "12H", "1D" cho dài hơn)</td></tr>
+          <tr><td><code>EMA_FAST / EMA_SLOW</code></td><td class="num">21 / 55</td><td>Hệ EMA cổ điển swing trading</td></tr>
+          <tr><td><code>ADX_MIN</code></td><td class="num">20.0</td><td>Trend strength threshold</td></tr>
+          <tr><td><code>STOP_ATR_MULT</code></td><td class="num">2.0</td><td>Stop loss = 2×ATR từ entry</td></tr>
+          <tr><td><code>TRAIL_ATR_MULT</code></td><td class="num">3.0</td><td>Trailing stop ratchet 3×ATR</td></tr>
+          <tr><td><code>RISK_PCT</code></td><td class="num">0.015</td><td>Rủi ro 1.5% balance / trade</td></tr>
+          <tr><td><code>MAX_POS_PCT</code></td><td class="num">0.25</td><td>Cap 25% balance / vị thế</td></tr>
+          <tr><td><code>LEVERAGE</code></td><td class="num">5</td><td>Đòn bẩy futures isolated</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ═══ SETUP ═══ -->
+    <section id="setup">
+      <h2>Cài đặt</h2>
+
+      <h3>1. Yêu cầu</h3>
+      <ul>
+        <li>Windows 10/11 (hoặc Linux/Mac)</li>
+        <li>Python 3.10+ (đang dùng 3.14)</li>
+        <li>Tài khoản OKX có API key (Trade + Read permission)</li>
+      </ul>
+
+      <h3>2. Tạo file <code>.env</code></h3>
+      <p>Trong cả 2 thư mục bot, hoặc 1 file trong <code>okx-arb-bot/</code> (bot trending sẽ tự dò):</p>
+<pre><code>OKX_API_KEY=your_api_key
+OKX_SECRET_KEY=your_secret_key
+OKX_PASSPHRASE=your_passphrase
+OKX_SIMULATED=true</code></pre>
+
+      <div class="notice notice-warn">
+        <div class="notice-icon">⚠</div>
+        <div>
+          <div class="notice-title">Test trên DEMO trước</div>
+          Đặt <code>OKX_SIMULATED=true</code> để dùng OKX testnet — có $50K USDT ảo, an toàn để test. Khi sẵn sàng live, đổi thành <code>false</code>.
+        </div>
+      </div>
+
+      <h3>3. Cài dependencies</h3>
+<pre><code>cd D:\PYTHON\okx-arb-bot
+pip install -r ../okx-arb-bot/requirements.txt
+pip install pandas numpy websocket-client</code></pre>
+      <p>Hoặc:</p>
+<pre><code>pip install flask python-dotenv python-okx pandas numpy openpyxl websocket-client</code></pre>
+    </section>
+
+    <section id="launch">
+      <h2>Khởi động</h2>
+
+      <div class="two-col">
+        <div class="card">
+          <h3 style="margin-top:0">Bot Funding Arb</h3>
+          <p>Mở terminal trong <code>D:\PYTHON\okx-arb-bot</code>:</p>
+          <pre><code>python app.py</code></pre>
+          <p>Hoặc double-click <code>start.bat</code>.</p>
+          <p>Dashboard: <a href="http://localhost:5000" class="link">http://localhost:5000</a></p>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">Bot Trend Following</h3>
+          <p>Mở terminal trong <code>D:\PYTHON\okx-trending-bot</code>:</p>
+          <pre><code>python app.py</code></pre>
+          <p>Hoặc double-click <code>start.bat</code>.</p>
+          <p>Dashboard: <a href="http://localhost:5001" class="link">http://localhost:5001</a></p>
+        </div>
+      </div>
+
+      <p>Cả 2 có thể chạy đồng thời — port khác nhau, không xung đột.</p>
+    </section>
+
+    <section id="dashboard">
+      <h2>Đọc dashboard</h2>
+
+      <h3>Topbar (chung cả 2 bot)</h3>
+      <ul>
+        <li><strong>Pill LIVE / POLLING / OFFLINE</strong> (xanh/vàng/đỏ): trạng thái Server-Sent Events (UI ↔ bot)</li>
+        <li><strong>Pill WS 21/21</strong>: WebSocket realtime ticker — cached/subscribed symbols</li>
+        <li><strong>Tick</strong>: thời gian cập nhật cuối cùng</li>
+        <li><strong>Nút Sync OKX</strong>: ép đồng bộ với OKX — xóa vị thế phantom</li>
+        <li><strong>Nút Khởi động/Dừng</strong>: bật/tắt bot loop</li>
+      </ul>
+
+      <h3>Stat cards</h3>
+      <ul>
+        <li><strong>Số dư USDT</strong>: balance khả dụng cho lệnh mới</li>
+        <li><strong>Vị thế đang mở</strong>: count / max</li>
+        <li><strong>Tổng PnL hiện tại</strong>: lãi/lỗ chưa realized (xanh/đỏ + flash khi đổi)</li>
+        <li><strong>% Lãi tổng</strong>: PnL / tổng vốn vào</li>
+      </ul>
+
+      <h3>Bảng "Vị thế đang mở"</h3>
+      <p>Mỗi hàng = 1 trade đang chạy. Có nút <em>Đóng</em> để force exit thủ công. Chip <span class="code" style="color:var(--mt)">LONG</span> / <span class="code" style="color:var(--rs)">SHORT</span> phân biệt hướng (trending bot).</p>
+
+      <h3>Insights panel</h3>
+      <p>Sau khi bot đóng &ge;3 trade, panel này phân tích lịch sử:</p>
+      <ul>
+        <li><strong>Win rate</strong>: % trade lãi</li>
+        <li><strong>Avg ROI</strong>: ROI trung bình mỗi trade</li>
+        <li><strong>Profit factor</strong>: tổng lãi / tổng lỗ (PF &gt; 1 = chiến lược có lãi ròng)</li>
+        <li><strong>Bảng xếp hạng coin</strong>: coin nào lãi nhất với bot này</li>
+        <li><strong>Banner khuyến nghị</strong>: text động dựa trên data</li>
+      </ul>
+      <p>Bot dùng dữ liệu này để <em>tự tối ưu mỗi lần chạy</em> — coin có lịch sử kém bị skip ở vòng quét tiếp theo.</p>
+    </section>
+
+    <section id="troubleshoot">
+      <h2>Xử lý sự cố thường gặp</h2>
+
+      <h3>Web hiện vị thế nhưng OKX không có</h3>
+      <p>"Phantom position" — đã đóng bên ngoài (manual / liquidation / partial close).</p>
+      <p><strong>Fix</strong>: nhấn nút <em>Sync OKX</em> trên topbar. Hoặc đợi 2.5 phút — bot tự reconcile.</p>
+
+      <h3>WS pill hiện OFF</h3>
+      <p>Firewall block <code>wss://ws.okx.com:8443</code>. Bot vẫn chạy nhờ REST fallback nhưng không còn realtime.</p>
+      <p><strong>Fix</strong>: kiểm tra firewall/proxy doanh nghiệp. Nếu không sửa được, bot vẫn hoạt động.</p>
+
+      <h3>Số dư thấp — dừng scan</h3>
+      <p>Balance &lt; <code>MIN_USDT × MAX_POS</code>. Bot không mở thêm vị thế.</p>
+      <p><strong>Fix</strong>: nạp thêm USDT, hoặc giảm <code>MIN_USDT</code> trong strategy.py.</p>
+
+      <h3>Bot crash — pill stuck "RUNNING"</h3>
+      <p>Đã fix: <code>_bot_safe()</code> luôn reset state khi crash. Nếu xảy ra: kiểm tra log file <code>bot.log</code> trong thư mục bot.</p>
+
+      <h3>Lỗi "Thiếu API key"</h3>
+      <p>File <code>.env</code> hoặc <code>test.env</code> chưa có hoặc thiếu field.</p>
+      <p><strong>Fix</strong>: tạo file theo template trên trang Setup.</p>
+    </section>
+
+    <!-- ═══ FAQ ═══ -->
+    <section id="faq">
+      <h2>FAQ</h2>
+
+      <div class="faq">
+        <details class="faq-item">
+          <summary>Bot có thể chạy 24/7 không?</summary>
+          <div class="faq-body">
+            <p>Có. Bot là Flask app + threading bot loop. Để chạy không cần Windows mở, deploy trên VPS Linux (vd: $5/tháng). Quản lý bằng <code>systemd</code> hoặc <code>screen</code>/<code>tmux</code>.</p>
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>Vốn $200 có thể kiếm bao nhiêu?</summary>
+          <div class="faq-body">
+            <p><strong>Funding bot</strong>: ~$2–6/tháng (1–3%). <strong>Trend bot</strong>: kỳ vọng ~$3/tháng nhưng phương sai cao (có tháng −$10, có tháng +$15).</p>
+            <p>Với vốn nhỏ, phí giao dịch chiếm tỷ lệ lớn → ROI kém hơn vốn lớn. Vốn càng lớn, ROI net càng gần gross.</p>
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>Sao bot không vào lệnh dù có signal?</summary>
+          <div class="faq-body">
+            <p>Có thể vì: (a) đã max positions, (b) vốn &lt; MIN_USDT, (c) coin đã có vị thế, (d) bot đã skip coin do score lịch sử quá tệ (&lt; −2). Xem log để biết lý do cụ thể.</p>
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>Lỡ tắt máy giữa lúc có vị thế?</summary>
+          <div class="faq-body">
+            <p>Bot ghi state vào <code>state.json</code> sau mỗi thay đổi vị thế. Restart bot → tự load lại + reconcile với OKX. Nếu OKX không còn vị thế (vd liquidated), bot xóa local + ghi <code>external_close</code>.</p>
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>Có thể thay đổi coin list?</summary>
+          <div class="faq-body">
+            <p>Có. Sửa <code>SCAN_COINS</code> trong <code>strategy.py</code> của bot tương ứng. Restart bot. Bot sẽ subscribe WS lại + scan đồng mới.</p>
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>Bot dùng đòn bẩy 5× có liquidation không?</summary>
+          <div class="faq-body">
+            <p><strong>Funding bot</strong>: delta-neutral nên về lý thuyết không bị liquidation (giá lên/xuống không ảnh hưởng tổng). Tuy nhiên nếu spot leg và futures leg desync (vd futures bị liquidated khi spot vẫn còn), có rủi ro. Isolated margin giới hạn thiệt hại.</p>
+            <p><strong>Trend bot</strong>: directional, CÓ thể liquidation nếu giá nhảy ngược 20% trong 1 nến (5× lev = 20% di chuyển = liquidation). Stop ATR đặt tại 2×ATR thường &lt; 5% nên thường thoát trước. Isolated margin giới hạn thiệt hại 1 trade.</p>
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>API key có thể bị lộ không?</summary>
+          <div class="faq-body">
+            <p><code>.env</code> đã có trong <code>.gitignore</code>. Không commit lên Git. Tuy nhiên nếu máy bị virus, key có thể bị copy. Bảo vệ: (a) tạo key có IP whitelist, (b) chỉ cấp permission Trade + Read, KHÔNG Withdraw, (c) rotate key định kỳ.</p>
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>Có backtest không?</summary>
+          <div class="faq-body">
+            <p>Hiện tại bot không có backtest script riêng. Nhưng analytics ghi mọi signal + trade vào SQLite — bạn có thể tự query để phân tích, hoặc chạy bot trên demo ≥ 1 tháng để thu thập "live forward test".</p>
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>Tôi thấy thấy số coin trên OKX khác con số bot báo?</summary>
+          <div class="faq-body">
+            <p>Bot chỉ scan 19–21 đồng định nghĩa trong <code>SCAN_COINS</code>. OKX có hàng trăm đồng — bot không quét hết để tránh API limit + tập trung vào liquid pairs. Sửa list nếu cần.</p>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <!-- ═══ DISCLAIMER ═══ -->
+    <section id="disclaimer">
+      <h2>Disclaimer</h2>
+
+      <div class="notice notice-danger">
+        <div class="notice-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 9v4M12 17h.01M10.3 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+        </div>
+        <div>
+          <div class="notice-title">Không phải lời khuyên tài chính</div>
+          <p>Code và tài liệu này được cung cấp <strong>như-thế-nào</strong> (as-is), không bảo hành. Các con số yield/ROI là <em>ước tính</em> dựa trên backtest và thị trường lịch sử, không phải cam kết. Quá khứ không bảo đảm tương lai.</p>
+          <p>Bạn chịu hoàn toàn trách nhiệm về vốn của mình. <strong>Chỉ giao dịch số tiền bạn sẵn sàng mất toàn bộ.</strong></p>
+        </div>
+      </div>
+
+      <h3>Rủi ro cụ thể</h3>
+      <ul>
+        <li><strong>Mã có thể có bug</strong> chưa được phát hiện — đọc kỹ code trước khi chạy live</li>
+        <li><strong>OKX có thể đổi API</strong> — bot có thể stop hoạt động đột ngột</li>
+        <li><strong>Mạng/firewall</strong> — WebSocket disconnect kéo dài có thể làm trễ exit</li>
+        <li><strong>Slippage trên thị trường mỏng</strong> — order market có thể fill ở giá tệ hơn dự tính</li>
+        <li><strong>Liquidation rủi ro</strong> dù dùng isolated margin</li>
+        <li><strong>Black swan events</strong> (sàn sập, giá pump/dump 50%) — không hệ thống nào tránh được hết</li>
+      </ul>
+
+      <footer>
+        <p>Aurora OKX Bots · Made with ⚙️ · Đọc code, hiểu code, chạy có trách nhiệm.</p>
+      </footer>
+    </section>
+
+  </main>
+</div>
+
+<script>
+// Active nav highlight on scroll
+const sections = document.querySelectorAll('section[id]');
+const navLinks = document.querySelectorAll('.nav a');
+const obs = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      navLinks.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + e.target.id));
+    }
+  });
+}, { rootMargin: '-30% 0px -60% 0px' });
+sections.forEach(s => obs.observe(s));
+
+// Smooth scroll
+navLinks.forEach(a => a.addEventListener('click', e => {
+  e.preventDefault();
+  const target = document.querySelector(a.getAttribute('href'));
+  if (target) target.scrollIntoView({ behavior: 'smooth' });
+}));
+
+// ─── Equity chart ────────────────────────────────────────────
+(async function renderEquity() {
+  const $ = id => document.getElementById(id);
+  const fmt = v => (v >= 0 ? '+' : '') + v.toFixed(2) + '$';
+  const fmtDate = ts => {
+    const d = new Date(ts * 1000);
+    return d.toLocaleDateString('vi-VN', { day:'2-digit', month:'2-digit' });
+  };
+
+  let data;
+  try {
+    const r = await fetch('equity_data.json', { cache: 'no-store' });
+    if (!r.ok) throw new Error('fetch fail');
+    data = await r.json();
+  } catch (e) {
+    $('equity-chart').style.display = 'none';
+    $('equity-empty').style.display = 'block';
+    $('eq-range').textContent = 'không có dữ liệu';
+    return;
+  }
+
+  $('eq-total').textContent = fmt(data.total.total);
+  $('eq-total').className = 'v ' + (data.total.total >= 0 ? 'vg' : 'vr');
+  $('eq-arb').textContent = fmt(data.arb.total) + ` · ${data.arb.n_trades} trades`;
+  $('eq-trend').textContent = fmt(data.trend.total) + ` · ${data.trend.n_trades} trades`;
+  $('eq-dd').textContent = '−' + data.total.max_dd.toFixed(2) + '$';
+  $('eq-range').textContent = `${fmtDate(data.window_start)} → ${fmtDate(data.window_end)} · build ${new Date(data.generated_at*1000).toLocaleString('vi-VN')}`;
+  $('eq-info').style.display = 'flex';
+
+  const toPoints = curve => curve.map(p => ({ x: p.ts * 1000, y: p.cum }));
+
+  new Chart($('equity-chart').getContext('2d'), {
+    type: 'line',
+    data: {
+      datasets: [
+        { label:'Arb',   data:toPoints(data.arb.curve),
+          borderColor:'#22d3ee', backgroundColor:'rgba(34,211,238,0.08)',
+          borderWidth:2, tension:0.1, fill:false, pointRadius:0, pointHoverRadius:5, stepped:'before' },
+        { label:'Trend', data:toPoints(data.trend.curve),
+          borderColor:'#a78bfa', backgroundColor:'rgba(167,139,250,0.08)',
+          borderWidth:2, tension:0.1, fill:false, pointRadius:0, pointHoverRadius:5, stepped:'before' },
+        { label:'Total', data:toPoints(data.total.curve),
+          borderColor:'#fbbf24', backgroundColor:'rgba(251,191,36,0.12)',
+          borderWidth:2.5, tension:0.1, fill:true, pointRadius:0, pointHoverRadius:6, stepped:'before' },
+      ],
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      interaction:{ mode:'index', intersect:false },
+      plugins:{
+        legend:{ display:false },
+        tooltip:{
+          backgroundColor:'rgba(10,12,20,0.95)', borderColor:'rgba(255,255,255,0.1)', borderWidth:1,
+          titleColor:'#f3f4f6', bodyColor:'#c7c9d1', padding:10, cornerRadius:8,
+          callbacks:{
+            title:items => new Date(items[0].parsed.x).toLocaleString('vi-VN'),
+            label:c => `${c.dataset.label}: ${fmt(c.parsed.y)}`,
+          },
+        },
+      },
+      scales:{
+        x:{ type:'time',
+            time:{ unit:'day', displayFormats:{ day:'dd/MM' } },
+            grid:{ color:'rgba(255,255,255,0.04)' },
+            ticks:{ color:'#8b8d97', font:{ size:11 } } },
+        y:{ grid:{ color:'rgba(255,255,255,0.04)' },
+            ticks:{ color:'#8b8d97', font:{ size:11 }, callback:v => v.toFixed(0)+'$' } },
+      },
+    },
+  });
+})();
+</script>
+</body>
+</html>
