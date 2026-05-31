@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MAISON AURORA · Deploy Guide — 24/7 on Oracle Cloud</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#080706; --s1:#0e0c0a; --s2:#141210;
+  --hr:rgba(255,255,255,0.09); --hr-hi:rgba(255,255,255,0.16);
+  --gold:#c4a46a; --gold-soft:rgba(196,164,106,0.08);
+  --ink-1:#ede8df; --ink-2:#a8a098; --ink-3:#6a6460; --ink-4:#383430;
+  --gain:#7aab8a; --loss:#b87a7a;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--ink-2);font-family:'Inter',sans-serif;font-weight:300;font-size:13px;line-height:1.75;-webkit-font-smoothing:antialiased;letter-spacing:.01em}
+::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--hr-hi)}
+
+.header{position:sticky;top:0;z-index:50;background:var(--bg);border-bottom:.5px solid var(--hr);padding:0 60px;display:flex;align-items:center;height:64px;gap:32px}
+.logotype{font-family:'Cormorant Garamond',serif;font-size:18px;font-weight:400;letter-spacing:.18em;color:var(--ink-1);text-transform:uppercase;text-decoration:none;white-space:nowrap}
+.logotype em{font-style:italic;color:var(--gold)}
+.nav{display:flex;gap:0;margin-left:auto}
+.nav a{font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3);text-decoration:none;padding:0 20px;height:64px;display:flex;align-items:center;border-left:.5px solid var(--hr);transition:color .2s}
+.nav a:hover{color:var(--ink-1)}.nav a.active{color:var(--gold)}
+.ver{font-size:9px;letter-spacing:.14em;color:var(--ink-4);font-family:'JetBrains Mono',monospace}
+
+.wrap{max-width:960px;margin:0 auto;padding:60px 48px 100px}
+
+.page-hero{padding-bottom:48px;border-bottom:.5px solid var(--hr);margin-bottom:60px}
+.page-eyebrow{font-size:9px;letter-spacing:.25em;text-transform:uppercase;color:var(--gold);margin-bottom:14px}
+.page-title{font-family:'Cormorant Garamond',serif;font-size:42px;font-weight:300;color:var(--ink-1);line-height:1.1;letter-spacing:-.01em}
+.page-sub{margin-top:16px;font-size:13px;color:var(--ink-3);max-width:600px;line-height:1.7}
+
+.section{margin-bottom:60px}
+.sec-label{font-size:9px;letter-spacing:.25em;text-transform:uppercase;color:var(--ink-3);margin-bottom:20px;display:flex;align-items:center;gap:16px}
+.sec-label::before{content:'';display:block;width:24px;height:.5px;background:var(--gold)}
+
+.card{border:.5px solid var(--hr);padding:28px 32px;margin-bottom:16px;background:var(--s1)}
+.card-title{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-1);font-weight:400;margin-bottom:14px}
+
+/* Step cards */
+.step-grid{display:flex;flex-direction:column;gap:0;border:.5px solid var(--hr)}
+.step{display:grid;grid-template-columns:60px 1fr;border-bottom:.5px solid var(--hr)}
+.step:last-child{border-bottom:none}
+.step-num{display:flex;align-items:center;justify-content:center;border-right:.5px solid var(--hr);padding:24px 0}
+.step-n{font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:300;color:var(--gold);line-height:1}
+.step-body{padding:24px 28px}
+.step-title{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-1);font-weight:400;margin-bottom:10px}
+.step-desc{font-size:12.5px;color:var(--ink-3);line-height:1.7;margin-bottom:14px}
+.step-desc:last-child{margin-bottom:0}
+.step-desc strong{color:var(--ink-2);font-weight:400}
+.step-desc code{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--gold);background:var(--gold-soft);padding:1px 5px}
+
+/* Spec grid */
+.spec-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:.5px solid var(--hr);margin-bottom:16px}
+.spec{padding:20px 22px;border-right:.5px solid var(--hr)}
+.spec:last-child{border-right:none}
+.spec-label{font-size:8.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-4);margin-bottom:8px}
+.spec-val{font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:300;color:var(--ink-1);letter-spacing:-.01em}
+.spec-sub{font-size:10.5px;color:var(--ink-4);margin-top:4px}
+
+.code-block{background:var(--s2);border:.5px solid var(--hr);padding:20px 24px;font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:1.9;color:var(--ink-3);overflow-x:auto;margin-top:14px;position:relative}
+.code-block .k{color:var(--gold)}
+.code-block .v{color:var(--ink-2)}
+.code-block .c{color:var(--ink-4)}
+.code-block .g{color:var(--gain)}
+.cb-label{font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-4);padding:8px 14px;border-bottom:.5px solid var(--hr);background:var(--bg);display:flex;align-items:center;gap:8px;margin:-20px -24px 16px}
+.cb-dot{width:6px;height:6px;border-radius:50%;background:var(--hr-hi)}
+
+.alert{display:flex;gap:14px;padding:16px 20px;margin-bottom:16px;font-size:12px;line-height:1.65;border:.5px solid}
+.alert-info{border-color:rgba(196,164,106,.25);background:rgba(196,164,106,.04);color:var(--ink-3)}
+.alert-warn{border-color:rgba(184,122,122,.25);background:rgba(184,122,122,.04);color:var(--ink-3)}
+.alert code{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--gold)}
+.alert strong{color:var(--ink-2);font-weight:400}
+
+.data-table{width:100%;border-collapse:collapse}
+.data-table th{font-size:8.5px;letter-spacing:.18em;text-transform:uppercase;font-weight:400;color:var(--ink-3);padding:12px 16px;border-bottom:.5px solid var(--hr);text-align:left;background:var(--s2)}
+.data-table td{padding:12px 16px;border-bottom:.5px solid rgba(255,255,255,.04);font-size:12px;color:var(--ink-2);vertical-align:top;line-height:1.6}
+.data-table tr:last-child td{border-bottom:none}
+.data-table td:first-child{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--gold);white-space:nowrap}
+.data-table td:last-child{color:var(--ink-3)}
+
+.tag{font-size:8px;letter-spacing:.15em;text-transform:uppercase;padding:2px 8px;border:.5px solid}
+.tag-free{color:var(--gain);border-color:rgba(122,171,138,.4)}
+.tag-paid{color:var(--ink-3);border-color:var(--hr)}
+
+.pm2-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:0;border:.5px solid var(--hr)}
+.pm2-cmd{padding:18px 22px;border-right:.5px solid var(--hr);border-bottom:.5px solid var(--hr)}
+.pm2-cmd:nth-child(2n){border-right:none}
+.pm2-cmd:nth-last-child(-n+2){border-bottom:none}
+.pm2-key{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--gold);margin-bottom:6px}
+.pm2-desc{font-size:11.5px;color:var(--ink-3)}
+
+.divider{height:.5px;background:var(--hr);margin:40px 0}
+
+@media(max-width:640px){.wrap{padding:40px 24px 80px}.header{padding:0 24px}.page-title{font-size:30px}.spec-grid{grid-template-columns:1fr}.pm2-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <a href="/" class="logotype">Maison · <em>Aurora</em></a>
+  <span class="ver">Funding Arbitrage · v2.1</span>
+  <nav class="nav">
+    <a href="/">Dashboard</a>
+    <a href="/docs">Documentation</a>
+    <a href="/deploy" class="active">Deploy</a>
+  </nav>
+</header>
+
+<div class="wrap">
+
+  <div class="page-hero">
+    <div class="page-eyebrow">Infrastructure Guide</div>
+    <div class="page-title">Deploy 24/7<br><em>Oracle Cloud Free Tier</em></div>
+    <p class="page-sub">
+      Hướng dẫn đưa bot lên server Oracle Cloud Always Free — 4 vCPU ARM · 24 GB RAM · Singapore.
+      Zero cost, uptime liên tục, latency thấp với OKX.
+    </p>
+  </div>
+
+  <!-- TẠI SAO ORACLE -->
+  <div class="section">
+    <div class="sec-label">Tại sao Oracle Cloud</div>
+
+    <div class="spec-grid">
+      <div class="spec">
+        <div class="spec-label">Compute</div>
+        <div class="spec-val">4 vCPU</div>
+        <div class="spec-sub">ARM Ampere A1 · Always Free</div>
+      </div>
+      <div class="spec">
+        <div class="spec-label">Memory</div>
+        <div class="spec-val">24 GB</div>
+        <div class="spec-sub">Đủ cho 3 bot đồng thời</div>
+      </div>
+      <div class="spec">
+        <div class="spec-label">Bandwidth</div>
+        <div class="spec-val">10 TB</div>
+        <div class="spec-sub">Outbound/tháng · Free</div>
+      </div>
+    </div>
+
+    <div style="border:.5px solid var(--hr);overflow:hidden">
+      <table class="data-table">
+        <thead><tr><th>Provider</th><th>Chi phí</th><th>RAM</th><th>Location</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Oracle Cloud A1</td>
+            <td style="color:var(--gain)">$0 / tháng <span class="tag tag-free">Free mãi</span></td>
+            <td>24 GB</td>
+            <td style="color:var(--ink-3)">Singapore (ap-singapore-1)</td>
+          </tr>
+          <tr>
+            <td>Google Cloud e2-micro</td>
+            <td style="color:var(--gain)">$0 / tháng <span class="tag tag-free">Free mãi</span></td>
+            <td>614 MB</td>
+            <td style="color:var(--ink-3)">US only — latency cao</td>
+          </tr>
+          <tr>
+            <td>Vultr Singapore</td>
+            <td>$5 / tháng <span class="tag tag-paid">Trả phí</span></td>
+            <td>1 GB</td>
+            <td style="color:var(--ink-3)">Singapore</td>
+          </tr>
+          <tr>
+            <td>Contabo VPS</td>
+            <td>$6 / tháng <span class="tag tag-paid">Trả phí</span></td>
+            <td>8 GB</td>
+            <td style="color:var(--ink-3)">Singapore</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="alert alert-info" style="margin-top:16px">
+      <span>—</span>
+      <div>Oracle Cloud yêu cầu thẻ Visa/Mastercard để verify. Sẽ charge <strong>$1</strong> rồi hoàn lại trong 3–5 ngày. Không bị tính phí nếu chỉ dùng Always Free resources.</div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- CÁC BƯỚC -->
+  <div class="section">
+    <div class="sec-label">Các bước thiết lập</div>
+
+    <div class="step-grid">
+
+      <!-- STEP 1 -->
+      <div class="step">
+        <div class="step-num"><span class="step-n">1</span></div>
+        <div class="step-body">
+          <div class="step-title">Đăng ký Oracle Cloud</div>
+          <p class="step-desc">Vào <strong>cloud.oracle.com</strong> → <strong>Start for free</strong>. Điền thông tin và chọn <strong>Home Region: Singapore</strong> — quan trọng, không thay đổi được sau khi tạo.</p>
+          <div class="alert alert-warn" style="margin-top:0;margin-bottom:0">
+            <span>—</span>
+            <div>Chọn <strong>Singapore (ap-singapore-1)</strong> để latency thấp nhất với OKX. Nếu chọn US thì ping tăng 150–200ms.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 2 -->
+      <div class="step">
+        <div class="step-num"><span class="step-n">2</span></div>
+        <div class="step-body">
+          <div class="step-title">Tạo VM Instance</div>
+          <p class="step-desc">Vào <strong>Compute → Instances → Create Instance</strong> và cấu hình như sau:</p>
+          <div class="code-block">
+<div class="cb-label"><span class="cb-dot"></span>Oracle Console — Cấu hình Instance</div>
+<span class="k">Name</span>          <span class="v">okx-bots-server</span>
+<span class="k">Image</span>         <span class="v">Ubuntu 22.04 (Canonical)</span>
+<span class="k">Shape</span>         <span class="v">VM.Standard.A1.Flex</span>  <span class="c">← Always Free</span>
+<span class="k">OCPU</span>          <span class="v">4</span>
+<span class="k">Memory</span>        <span class="v">24 GB</span>
+<span class="k">Public IP</span>     <span class="v">Assign a public IPv4 address  ✓</span>
+<span class="k">SSH Key</span>       <span class="v">Generate a key pair → tải về .key</span></div>
+          <p class="step-desc" style="margin-top:14px">Giữ file <code>.key</code> cẩn thận — mất file là mất quyền SSH vào server.</p>
+        </div>
+      </div>
+
+      <!-- STEP 3 -->
+      <div class="step">
+        <div class="step-num"><span class="step-n">3</span></div>
+        <div class="step-body">
+          <div class="step-title">Mở Firewall</div>
+          <p class="step-desc">Oracle mặc định chặn tất cả port ngoài 22. Cần mở thêm port cho web dashboard.</p>
+          <p class="step-desc"><strong>Trên Oracle Console:</strong> Networking → VCN → Security Lists → Add Ingress Rules</p>
+          <div class="code-block">
+<div class="cb-label"><span class="cb-dot"></span>Ingress Rule — Oracle Console</div>
+<span class="k">Source CIDR</span>    <span class="v">0.0.0.0/0</span>
+<span class="k">Protocol</span>       <span class="v">TCP</span>
+<span class="k">Port Range</span>     <span class="v">5000-5001</span>  <span class="c">← port arb-bot và trend-bot</span></div>
+          <p class="step-desc" style="margin-top:14px"><strong>Trên server</strong> (sau khi SSH vào) — Ubuntu có thêm firewall nội bộ:</p>
+          <div class="code-block">
+<div class="cb-label"><span class="cb-dot"></span>bash</div>
+<span class="c"># Mở port trong iptables nội bộ</span>
+<span class="g">sudo</span> iptables -I INPUT -p tcp --dport 5000 -j ACCEPT
+<span class="g">sudo</span> iptables -I INPUT -p tcp --dport 5001 -j ACCEPT
+<span class="g">sudo</span> apt install iptables-persistent -y
+<span class="g">sudo</span> netfilter-persistent save</div>
+        </div>
+      </div>
+
+      <!-- STEP 4 -->
+      <div class="step">
+        <div class="step-num"><span class="step-n">4</span></div>
+        <div class="step-body">
+          <div class="step-title">SSH từ Windows</div>
+          <p class="step-desc">Lấy IP public từ Oracle Console. Sau đó SSH vào server qua PowerShell:</p>
+          <div class="code-block">
+<div class="cb-label"><span class="cb-dot"></span>PowerShell — Windows</div>
+<span class="c"># Đặt permission đúng cho file key</span>
+icacls <span class="v">"C:\path\to\your-key.key"</span> /inheritance:r /grant:r <span class="v">"$env:USERNAME:(R)"</span>
+
+<span class="c"># SSH vào server</span>
+ssh -i <span class="v">"C:\path\to\your-key.key"</span> ubuntu@<span class="v">&lt;IP_SERVER&gt;</span></div>
+        </div>
+      </div>
+
+      <!-- STEP 5 -->
+      <div class="step">
+        <div class="step-num"><span class="step-n">5</span></div>
+        <div class="step-body">
+          <div class="step-title">Cài môi trường trên server</div>
+          <div class="code-block">
+<div class="cb-label"><span class="cb-dot"></span>bash — Ubuntu Server</div>
+<span class="c"># Cập nhật hệ thống</span>
+<span class="g">sudo</span> apt update && sudo apt upgrade -y
+
+<span class="c"># Python, pip, git</span>
+<span class="g">sudo</span> apt install python3 python3-pip python3-venv git -y
+
+<span class="c"># PM2 để quản lý process</span>
+<span class="g">sudo</span> apt install nodejs npm -y
+<span class="g">sudo</span> npm install -g pm2</div>
+        </div>
+      </div>
+
+      <!-- STEP 6 -->
+      <div class="step">
+        <div class="step-num"><span class="step-n">6</span></div>
+        <div class="step-body">
+          <div class="step-title">Upload code lên server</div>
+          <p class="step-desc"><strong>Cách A — SCP</strong> (không cần GitHub, upload trực tiếp):</p>
+          <div class="code-block">
+<div class="cb-label"><span class="cb-dot"></span>PowerShell — Windows</div>
+<span class="c"># Copy từng bot lên server</span>
+scp -i <span class="v">"your-key.key"</span> -r <span class="v">"D:\PYTHON\okx-arb-bot"</span>     ubuntu@<span class="v">&lt;IP&gt;</span>:~/
+scp -i <span class="v">"your-key.key"</span> -r <span class="v">"D:\PYTHON\okx-trending-bot"</span> ubuntu@<span class="v">&lt;IP&gt;</span>:~/
+scp -i <span class="v">"your-key.key"</span> -r <span class="v">"D:\PYTHON\telegram_gateway"</span> ubuntu@<span class="v">&lt;IP&gt;</span>:~/</div>
+          <p class="step-desc" style="margin-top:14px"><strong>Cách B — Git</strong> (nếu code đã đẩy lên GitHub):</p>
+          <div class="code-block">
+<div class="cb-label"><span class="cb-dot"></span>bash — Server</div>
+git clone https://github.com/<span class="v">username</span>/okx-arb-bot.git
+git clone https://github.com/<span class="v">username</span>/okx-trending-bot.git
+git clone https://github.com/<span class="v">username</span>/telegram_gateway.git</div>
+        </div>
+      </div>
+
+      <!-- STEP 7 -->
+      <div class="step">
+        <div class="step-num"><span class="step-n">7</span></div>
+        <div class="step-body">
+          <div class="step-title">Cài dependencies & cấu hình .env</div>
+          <div class="code-block">
+<div class="cb-label"><span class="cb-dot"></span>bash — Server</div>
+<span class="c"># Cài requirements cho từng bot</span>
+<span class="g">cd</span> ~/okx-arb-bot     && pip3 install -r requirements.txt
+<span class="g">cd</span> ~/okx-trending-bot && pip3 install -r requirements.txt
+<span class="g">cd</span> ~/telegram_gateway && pip3 install -r requirements.txt</div>
+          <p class="step-desc" style="margin-top:14px">Tạo file <code>.env</code> trên server (không commit file .env lên git):</p>
+          <div class="code-block">
+<div class="cb-label"><span class="cb-dot"></span>bash — Tạo .env trên server</div>
+<span class="c"># Copy .env từ local lên server</span>
+scp -i <span class="v">"your-key.key"</span> <span class="v">"D:\PYTHON\okx-arb-bot\.env"</span>     ubuntu@<span class="v">&lt;IP&gt;</span>:~/okx-arb-bot/
+scp -i <span class="v">"your-key.key"</span> <span class="v">"D:\PYTHON\okx-trending-bot\.env"</span> ubuntu@<span class="v">&lt;IP&gt;</span>:~/okx-trending-bot/</div>
+        </div>
+      </div>
+
+      <!-- STEP 8 -->
+      <div class="step">
+        <div class="step-num"><span class="step-n">8</span></div>
+        <div class="step-body">
+          <div class="step-title">Chạy bot với PM2</div>
+          <div class="code-block">
+<div class="cb-label"><span class="cb-dot"></span>bash — Server</div>
+<span class="c"># Khởi chạy cả 3 bot</span>
+pm2 start <span class="v">"python3 app.py"</span>  --name okx-arb-bot     --cwd ~/okx-arb-bot
+pm2 start <span class="v">"python3 app.py"</span>  --name okx-trend-bot   --cwd ~/okx-trending-bot
+pm2 start <span class="v">"python3 gateway.py"</span> --name telegram-gateway --cwd ~/telegram_gateway
+
+<span class="c"># Lưu config — tự động restart khi server reboot</span>
+pm2 startup   <span class="c"># chạy lệnh mà PM2 in ra</span>
+pm2 save</div>
+          <div class="alert alert-info" style="margin-top:14px;margin-bottom:0">
+            <span>—</span>
+            <div>Sau <code>pm2 startup</code>, PM2 sẽ in một lệnh <code>sudo env ...</code> — copy và chạy lệnh đó để hoàn tất thiết lập auto-start.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- PM2 COMMANDS -->
+  <div class="section">
+    <div class="sec-label">Quản lý với PM2</div>
+
+    <div class="pm2-grid">
+      <div class="pm2-cmd">
+        <div class="pm2-key">pm2 status</div>
+        <div class="pm2-desc">Xem trạng thái tất cả bot — online / errored / stopped</div>
+      </div>
+      <div class="pm2-cmd">
+        <div class="pm2-key">pm2 logs</div>
+        <div class="pm2-desc">Xem log realtime của tất cả bot</div>
+      </div>
+      <div class="pm2-cmd">
+        <div class="pm2-key">pm2 logs okx-arb-bot</div>
+        <div class="pm2-desc">Log của riêng arb-bot (thêm <code>--lines 200</code> để xem nhiều hơn)</div>
+      </div>
+      <div class="pm2-cmd">
+        <div class="pm2-key">pm2 restart all</div>
+        <div class="pm2-desc">Restart tất cả bot cùng lúc sau khi update code</div>
+      </div>
+      <div class="pm2-cmd">
+        <div class="pm2-key">pm2 restart okx-arb-bot</div>
+        <div class="pm2-desc">Restart riêng 1 bot theo tên</div>
+      </div>
+      <div class="pm2-cmd">
+        <div class="pm2-key">pm2 stop all</div>
+        <div class="pm2-desc">Dừng tất cả bot (không xóa khỏi PM2)</div>
+      </div>
+      <div class="pm2-cmd">
+        <div class="pm2-key">pm2 monit</div>
+        <div class="pm2-desc">Dashboard realtime: CPU, RAM, restart count từng process</div>
+      </div>
+      <div class="pm2-cmd">
+        <div class="pm2-key">pm2 flush</div>
+        <div class="pm2-desc">Xóa toàn bộ log files của PM2</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- DEPLOY SCRIPT -->
+  <div class="section">
+    <div class="sec-label">Script deploy nhanh</div>
+
+    <div class="card">
+      <div class="card-title">deploy.ps1 — chạy mỗi khi sửa code</div>
+      <p style="font-size:12.5px;color:var(--ink-3);margin-bottom:16px">Lưu file này tại <code>D:\PYTHON\deploy.ps1</code>. Mỗi lần sửa xong, chỉ cần chạy 1 lệnh.</p>
+      <div class="code-block">
+<div class="cb-label"><span class="cb-dot"></span>PowerShell — deploy.ps1</div>
+param([string]<span class="k">$bot</span> = <span class="v">"all"</span>)
+
+<span class="k">$SERVER</span> = <span class="v">"ubuntu@&lt;IP_SERVER&gt;"</span>
+<span class="k">$KEY</span>    = <span class="v">"C:\path\to\your-key.key"</span>
+
+<span class="k">function</span> Deploy(<span class="k">$name</span>, <span class="k">$path</span>) {
+  Write-Host <span class="v">"→ Deploy $name..."</span>
+  scp -i <span class="k">$KEY</span> -r <span class="v">"D:\PYTHON\$path"</span> <span class="v">"${SERVER}:~/"</span>
+  ssh -i <span class="k">$KEY</span> <span class="k">$SERVER</span> <span class="v">"pm2 restart $name"</span>
+}
+
+<span class="k">if</span> (<span class="k">$bot</span> -eq <span class="v">"all"</span>) {
+  Deploy <span class="v">"okx-arb-bot"</span>     <span class="v">"okx-arb-bot"</span>
+  Deploy <span class="v">"okx-trend-bot"</span>   <span class="v">"okx-trending-bot"</span>
+  Deploy <span class="v">"telegram-gateway"</span> <span class="v">"telegram_gateway"</span>
+} <span class="k">else</span> {
+  Deploy <span class="k">$bot</span> <span class="k">$bot</span>
+}
+
+Write-Host <span class="g">"✓ Deploy hoàn tất"</span></div>
+    </div>
+
+    <div class="code-block" style="margin-top:0;border-top:none">
+<div class="cb-label"><span class="cb-dot"></span>Cách dùng</div>
+<span class="c"># Deploy tất cả bot</span>
+.\deploy.ps1
+
+<span class="c"># Chỉ deploy arb-bot</span>
+.\deploy.ps1 okx-arb-bot
+
+<span class="c"># Chỉ deploy trend-bot</span>
+.\deploy.ps1 okx-trend-bot</div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- TRỢ GIÚP -->
+  <div class="section">
+    <div class="sec-label">Xử lý sự cố thường gặp</div>
+
+    <div style="border:.5px solid var(--hr);overflow:hidden">
+      <table class="data-table">
+        <thead><tr><th>Lỗi</th><th>Nguyên nhân &amp; Cách sửa</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>ssh: Permission denied</td>
+            <td style="color:var(--ink-3)">File .key chưa set permission. Chạy <code>icacls your-key.key /inheritance:r /grant:r "%USERNAME%:(R)"</code></td>
+          </tr>
+          <tr>
+            <td>Connection refused :5000</td>
+            <td style="color:var(--ink-3)">Chưa mở Ingress Rule trên Oracle Console hoặc chưa chạy lệnh iptables trên server</td>
+          </tr>
+          <tr>
+            <td>pm2: command not found</td>
+            <td style="color:var(--ink-3)">Chạy <code>sudo npm install -g pm2</code> hoặc dùng đường dẫn đầy đủ <code>/usr/local/bin/pm2</code></td>
+          </tr>
+          <tr>
+            <td>ModuleNotFoundError</td>
+            <td style="color:var(--ink-3)">Chưa cài requirements: <code>pip3 install -r requirements.txt</code> trong đúng thư mục bot</td>
+          </tr>
+          <tr>
+            <td>Bot restart liên tục</td>
+            <td style="color:var(--ink-3)">Xem log: <code>pm2 logs okx-arb-bot --lines 50</code> để tìm lỗi. Thường do .env thiếu key hoặc sai OKX credentials</td>
+          </tr>
+          <tr>
+            <td>Out of disk space</td>
+            <td style="color:var(--ink-3)">Oracle Free cho 50GB boot. Kiểm tra: <code>df -h</code>. Xóa log cũ: <code>pm2 flush</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

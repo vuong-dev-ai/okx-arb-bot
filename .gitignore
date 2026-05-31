@@ -3,7 +3,11 @@ test.env
 *.env
 .env
 
-# Excel log (dữ liệu cá nhân)
+# Dữ liệu runtime (không commit)
+analytics.db
+analytics.db-wal
+analytics.db-shm
+state.json
 pnl_log.xlsx
 
 # Bot log

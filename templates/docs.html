@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MAISON AURORA · Documentation — Funding Arbitrage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#050403;
+  --hr:rgba(255,255,255,0.055);
+  --hr-hi:rgba(255,255,255,0.11);
+  --gold:#b8966a;
+  --gold-dim:rgba(184,150,106,0.15);
+  --ink-1:#eee9e0;
+  --ink-2:#968e84;
+  --ink-3:#574f4a;
+  --ink-4:#2e2a26;
+  --gain:#6a9e7a;
+  --loss:#a87070;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--ink-2);font-family:'Inter',sans-serif;font-weight:300;font-size:13px;line-height:1.75;-webkit-font-smoothing:antialiased;letter-spacing:.01em}
+::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--hr-hi)}
+
+/* ── HEADER ── */
+.header{position:sticky;top:0;z-index:50;background:var(--bg);padding:0 72px;display:flex;align-items:center;height:68px}
+.logotype{font-family:'Cormorant Garamond',serif;font-size:17px;font-weight:400;letter-spacing:.22em;color:var(--ink-1);text-transform:uppercase;text-decoration:none;white-space:nowrap}
+.logotype em{font-style:italic;color:var(--gold)}
+.nav{display:flex;gap:36px;margin-left:auto}
+.nav a{font-size:8px;letter-spacing:.32em;text-transform:uppercase;color:var(--ink-3);text-decoration:none;transition:color .2s;opacity:.7}
+.nav a:hover{color:var(--ink-1);opacity:1}
+.nav a.active{color:var(--ink-2);opacity:1}
+.header-line{position:absolute;bottom:0;left:72px;right:72px;height:.5px;background:var(--hr)}
+
+/* ── WRAP ── */
+.wrap{max-width:1060px;margin:0 auto;padding:0 72px 140px}
+
+/* ── HERO ── */
+.hero{padding:96px 0 80px;border-bottom:.5px solid var(--hr);margin-bottom:0}
+.eyebrow{font-size:8px;letter-spacing:.42em;text-transform:uppercase;color:var(--ink-4);margin-bottom:32px}
+.hero-title{font-family:'Cormorant Garamond',serif;font-size:72px;font-weight:300;color:var(--ink-1);line-height:.96;letter-spacing:-.025em;margin-bottom:36px}
+.hero-title em{font-style:italic;color:var(--gold)}
+.hero-sub{font-size:13px;color:var(--ink-3);max-width:520px;line-height:1.85;letter-spacing:.015em}
+
+/* ── SECTION LAYOUT ── */
+.section{display:grid;grid-template-columns:72px 1fr;gap:0 64px;padding:72px 0;border-bottom:.5px solid var(--hr)}
+.sec-num{font-family:'Cormorant Garamond',serif;font-size:11px;font-weight:400;letter-spacing:.2em;color:var(--ink-4);padding-top:4px}
+.sec-label{font-size:8px;letter-spacing:.38em;text-transform:uppercase;color:var(--ink-3);margin-bottom:44px}
+
+/* ── SUBSECTION ── */
+.subsec{margin-bottom:52px}
+.subsec:last-child{margin-bottom:0}
+.subsec-title{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-2);margin-bottom:18px}
+.subsec-body{font-size:12.5px;color:var(--ink-3);line-height:1.85;max-width:640px}
+.subsec-body strong{color:var(--ink-2);font-weight:400}
+
+/* ── FLOW — inline numbered ── */
+.flow{margin-top:28px;display:flex;flex-wrap:wrap;align-items:baseline;gap:0;row-gap:10px}
+.flow-item{display:inline-flex;align-items:baseline;gap:9px;color:var(--ink-3);font-size:12px}
+.flow-item .fn{font-family:'Cormorant Garamond',serif;font-size:22px;color:var(--ink-4);line-height:1}
+.flow-item .ft{color:var(--ink-2)}
+.flow-arr{color:var(--ink-4);margin:0 14px;font-size:11px}
+
+/* ── FEATURE LIST ── */
+.feat-item{padding:26px 0;border-bottom:.5px solid var(--hr);display:grid;grid-template-columns:1fr auto;gap:0 24px}
+.feat-item:first-child{border-top:.5px solid var(--hr)}
+.feat-name{font-size:12px;letter-spacing:.07em;color:var(--ink-1);font-weight:400;margin-bottom:9px;grid-column:1;grid-row:1}
+.feat-tag{font-size:7px;letter-spacing:.22em;text-transform:uppercase;padding-top:3px;grid-column:2;grid-row:1;white-space:nowrap;color:var(--ink-4)}
+.feat-tag.new{color:var(--gold)}
+.feat-tag.risk{color:var(--loss)}
+.feat-desc{font-size:12px;color:var(--ink-3);line-height:1.72;grid-column:1/-1;grid-row:2;max-width:640px}
+.feat-desc code{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--gold)}
+
+/* ── TABLE ── */
+.dt{width:100%;border-collapse:collapse}
+.dt th{font-size:8px;letter-spacing:.28em;text-transform:uppercase;font-weight:400;color:var(--ink-4);padding:0 40px 14px 0;border-bottom:.5px solid var(--hr-hi);text-align:left}
+.dt th:last-child{padding-right:0}
+.dt td{padding:15px 40px 15px 0;border-bottom:.5px solid var(--hr);font-size:12px;color:var(--ink-2);vertical-align:top;line-height:1.65}
+.dt td:last-child{padding-right:0;color:var(--ink-3)}
+.dt td:first-child{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--gold);white-space:nowrap;width:200px}
+.dt td:nth-child(2){font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-3);white-space:nowrap;width:90px}
+.dt tr:last-child td{border-bottom:none}
+
+/* ── API TABLE ── */
+.dt .method{font-size:7.5px;letter-spacing:.14em;text-transform:uppercase;font-family:'JetBrains Mono',monospace;padding:2px 9px;border:.5px solid}
+.dt .get{color:var(--gain);border-color:rgba(106,158,122,.3)}
+.dt .post{color:var(--gold);border-color:rgba(184,150,106,.3)}
+.dt td.ep{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-2);padding-left:16px;width:180px}
+
+/* ── CODE BLOCK ── */
+.code-block{border-left:.5px solid var(--gold);padding:4px 0 4px 24px;margin:28px 0;font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:1.95;color:var(--ink-3)}
+.code-block .k{color:var(--gold)}.code-block .v{color:var(--ink-2)}.code-block .c{color:var(--ink-4)}
+
+/* ── NOTE ── */
+.note{padding-left:18px;border-left:.5px solid var(--hr-hi);font-size:12px;color:var(--ink-3);line-height:1.8;margin-bottom:20px}
+.note.warn{border-left-color:rgba(168,112,112,.35)}
+.note code{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--gold)}
+.note strong{color:var(--ink-2);font-weight:400}
+
+/* ── CHANGELOG ── */
+.cl-item{display:grid;grid-template-columns:88px 1fr;gap:0 40px;padding:22px 0;border-bottom:.5px solid var(--hr)}
+.cl-item:last-child{border-bottom:none}
+.cl-date{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--ink-4);letter-spacing:.06em;padding-top:3px}
+.cl-body{font-size:12.5px;color:var(--ink-3);line-height:1.75}
+.cl-body strong{color:var(--ink-1);font-weight:400}
+
+@media(max-width:700px){
+  .header,.wrap{padding-left:28px;padding-right:28px}
+  .header-line{left:28px;right:28px}
+  .hero-title{font-size:44px}
+  .section{grid-template-columns:1fr;gap:0}
+  .sec-num{margin-bottom:8px;font-size:10px}
+  .dt td:first-child{width:auto}
+}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <a href="/" class="logotype">Maison · <em>Aurora</em></a>
+  <nav class="nav">
+    <a href="/">Dashboard</a>
+    <a href="/docs" class="active">Documentation</a>
+    <a href="/deploy">Deploy</a>
+  </nav>
+  <div class="header-line"></div>
+</header>
+
+<div class="wrap">
+
+  <div class="hero">
+    <div class="eyebrow">Strategy Reference &nbsp;·&nbsp; Funding Arbitrage · v2.1</div>
+    <div class="hero-title">Delta-Neutral<br><em>Funding Rate<br>Arbitrage</em></div>
+    <p class="hero-sub">Bot đồng thời mua spot và short futures cùng khối lượng để tạo vị thế delta-neutral. Lợi nhuận đến từ funding rate mà vị thế short nhận được từ thị trường mỗi 8 giờ.</p>
+  </div>
+
+  <!-- 01 STRATEGY -->
+  <div class="section">
+    <div class="sec-num">01</div>
+    <div>
+      <div class="sec-label">Chiến lược</div>
+
+      <div class="subsec">
+        <div class="subsec-title">Luồng thực thi</div>
+        <p class="subsec-body">Scan funding rate mỗi 5 phút, vào lệnh theo entry_score kết hợp rate hiện tại và rate kế tiếp.</p>
+        <div class="flow">
+          <span class="flow-item"><span class="fn">1</span><span class="ft">Scan funding rate 21 coin</span></span>
+          <span class="flow-arr">→</span>
+          <span class="flow-item"><span class="fn">2</span><span class="ft">Rank theo entry_score = rate×0.4 + next×0.6</span></span>
+          <span class="flow-arr">→</span>
+          <span class="flow-item"><span class="fn">3</span><span class="ft">Mua spot + Short futures</span></span>
+          <span class="flow-arr">→</span>
+          <span class="flow-item"><span class="fn">4</span><span class="ft">Nhận funding payment mỗi 8h</span></span>
+          <span class="flow-arr">→</span>
+          <span class="flow-item"><span class="fn">5</span><span class="ft">Thoát khi rate &lt; MIN_STAY_RATE hoặc price stop</span></span>
+        </div>
+      </div>
+
+      <div class="subsec">
+        <div class="subsec-title">Cơ chế delta-neutral</div>
+        <p class="subsec-body">
+          Mua <strong>X USDT spot coin</strong> đồng thời short futures cùng notional với leverage 5×.
+          Khi giá tăng — spot lời, futures lỗ cùng lượng, net ≈ 0.
+          Khi giá giảm — spot lỗ, futures lời, net ≈ 0.
+          Nguồn lợi nhuận duy nhất là <strong>funding payment mỗi 8 giờ</strong>.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 02 FEATURES -->
+  <div class="section">
+    <div class="sec-num">02</div>
+    <div>
+      <div class="sec-label">Tính năng</div>
+
+      <div class="feat-item">
+        <div class="feat-name">Entry Score Blending</div><div class="feat-tag new">Mới</div>
+        <p class="feat-desc">Ưu tiên vào lệnh dựa trên <code>entry_score = rate×0.4 + next_rate×0.6</code>. Trọng số cao cho next_rate giúp capture payment sắp đến.</p>
+      </div>
+      <div class="feat-item">
+        <div class="feat-name">Adaptive Position Sizing</div><div class="feat-tag new">Mới</div>
+        <p class="feat-desc">Tự động điều chỉnh % vốn theo rate — ≥ 0.05%/8h → 35% · ≥ 0.02%/8h → 30% · &lt; 0.02%/8h → 25%. Rate cao vào nhiều hơn.</p>
+      </div>
+      <div class="feat-item">
+        <div class="feat-name">Fee Estimation (Net PnL)</div><div class="feat-tag new">Mới</div>
+        <p class="feat-desc">Analytics ghi nhận <code>net_pnl</code> sau phí và <code>fee_est</code>. Round-trip: spot 0.10% × 2 + futures 0.05% × 2 = 0.30% tổng.</p>
+      </div>
+      <div class="feat-item">
+        <div class="feat-name">Smarter Exit Threshold</div><div class="feat-tag new">Mới</div>
+        <p class="feat-desc">Thoát khi <code>funding_rate &lt; MIN_STAY_RATE (0.005%/8h)</code>. Tránh giữ quá lâu khi rate giảm không đủ bù phí.</p>
+      </div>
+      <div class="feat-item">
+        <div class="feat-name">Price Divergence Stop</div><div class="feat-tag new">Mới</div>
+        <p class="feat-desc">Thoát tự động nếu <code>price_pnl &lt; -2% notional</code>. Bảo vệ khi hedge bị lệch bất thường — slippage lớn hoặc gap giá.</p>
+      </div>
+      <div class="feat-item">
+        <div class="feat-name">Actual Fill Size Fix</div><div class="feat-tag new">Mới</div>
+        <p class="feat-desc">Lấy <code>accFillSz</code> thực tế từ order sau khi khớp để tính spot amount đúng. Tránh lỗi insufficient balance khi bán spot.</p>
+      </div>
+      <div class="feat-item">
+        <div class="feat-name">WebSocket Realtime Prices</div><div class="feat-tag">Core</div>
+        <p class="feat-desc">Giá spot cập nhật sub-second qua OKX WebSocket. PnL refresh mỗi 2 giây. Fallback REST nếu WS stale > 15s.</p>
+      </div>
+      <div class="feat-item">
+        <div class="feat-name">Bayesian Adaptive Ranking</div><div class="feat-tag">Core</div>
+        <p class="feat-desc">Sau mỗi trade đóng, bot học lịch sử per-coin và re-rank cơ hội. <code>score = avg_roi × n/(n+3)</code>. Coin score &lt; -1.5 bị bỏ qua.</p>
+      </div>
+      <div class="feat-item">
+        <div class="feat-name">State Persistence + Reconcile</div><div class="feat-tag">Core</div>
+        <p class="feat-desc">Vị thế lưu vào <code>state.json</code>. Khi restart, restore và reconcile với OKX. Tự động bán spot nếu futures đã đóng bên ngoài.</p>
+      </div>
+      <div class="feat-item">
+        <div class="feat-name">OKX Verify After Close</div><div class="feat-tag risk">Bảo mật</div>
+        <p class="feat-desc">Sau mỗi lệnh đóng, query OKX xác nhận futures đã biến mất trước khi xóa local state. Nếu spot leg fail, retry bán spot tự động.</p>
+      </div>
+      <div class="feat-item">
+        <div class="feat-name">Reconcile + Spot Sell</div><div class="feat-tag risk">Bảo mật</div>
+        <p class="feat-desc">Khi reconcile phát hiện futures đóng bên ngoài do liquidation, bot tự bán nốt spot. Tránh unhedged position trên sàn.</p>
+      </div>
+      <div class="feat-item">
+        <div class="feat-name">Telegram + Auto-Restart</div><div class="feat-tag new">Mới</div>
+        <p class="feat-desc">Thông báo Telegram khi mở/đóng vị thế và crash. Bot tự restart tối đa 3 lần với delay 30s. Cấu hình qua <code>TELEGRAM_TOKEN</code>.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 03 PARAMETERS -->
+  <div class="section">
+    <div class="sec-num">03</div>
+    <div>
+      <div class="sec-label">Tham số cấu hình</div>
+      <table class="dt">
+        <thead>
+          <tr><th>Tham số</th><th>Mặc định</th><th>Mô tả</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>MIN_FUNDING_RATE</td><td>0.0001</td><td>Ngưỡng tối thiểu để mở vị thế (0.01%/8h ≈ 11% pa)</td></tr>
+          <tr><td>MIN_STAY_RATE</td><td>0.00005</td><td>Ngưỡng thoát — thoát nếu rate thấp hơn (0.005%/8h)</td></tr>
+          <tr><td>POSITION_PCT</td><td>0.30</td><td>% vốn mỗi vị thế (base — adaptive override 25–35%)</td></tr>
+          <tr><td>PRICE_STOP_PCT</td><td>0.02</td><td>Thoát nếu price_pnl &lt; -2% notional</td></tr>
+          <tr><td>MAX_POS</td><td>3</td><td>Số vị thế tối đa đồng thời</td></tr>
+          <tr><td>LEVERAGE</td><td>5</td><td>Đòn bẩy futures isolated (margin = notional / 5)</td></tr>
+          <tr><td>SPOT_FEE_RATE</td><td>0.001</td><td>Fee spot taker (0.10% mỗi chiều)</td></tr>
+          <tr><td>FUTURES_FEE_RATE</td><td>0.0005</td><td>Fee futures taker (0.05% mỗi chiều)</td></tr>
+          <tr><td>SCAN_INT</td><td>300s</td><td>Interval scan funding rate mới</td></tr>
+          <tr><td>MON_INT</td><td>2s</td><td>Interval cập nhật PnL realtime</td></tr>
+          <tr><td>FUNDING_CHK_INT</td><td>30s</td><td>Interval check exit condition</td></tr>
+          <tr><td>RECON_INT</td><td>150s</td><td>Interval reconcile với OKX</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 04 API -->
+  <div class="section">
+    <div class="sec-num">04</div>
+    <div>
+      <div class="sec-label">API Endpoints</div>
+      <table class="dt">
+        <thead>
+          <tr><th>Method</th><th class="ep" style="padding-left:16px">Endpoint</th><th>Mô tả</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><span class="method get">GET</span></td><td class="ep">/api/status</td><td>Trạng thái bot, vị thế, cơ hội, log</td></tr>
+          <tr><td><span class="method get">GET</span></td><td class="ep">/api/stream</td><td>Server-Sent Events realtime (khuyến nghị)</td></tr>
+          <tr><td><span class="method post">POST</span></td><td class="ep">/api/start</td><td>Khởi động bot loop</td></tr>
+          <tr><td><span class="method post">POST</span></td><td class="ep">/api/stop</td><td>Dừng bot — đóng vị thế trước khi thoát</td></tr>
+          <tr><td><span class="method post">POST</span></td><td class="ep">/api/close/:coin</td><td>Đóng thủ công 1 vị thế theo coin</td></tr>
+          <tr><td><span class="method post">POST</span></td><td class="ep">/api/sync</td><td>Ép reconcile ngay với OKX</td></tr>
+          <tr><td><span class="method get">GET</span></td><td class="ep">/api/analytics</td><td>Thống kê lịch sử, coin ranking, bucket analysis</td></tr>
+          <tr><td><span class="method get">GET</span></td><td class="ep">/api/pnl-history</td><td>Dữ liệu Excel PnL dạng JSON</td></tr>
+          <tr><td><span class="method get">GET</span></td><td class="ep">/api/health</td><td>Health check — trả {ok, running, positions, ts}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 05 SETUP -->
+  <div class="section">
+    <div class="sec-num">05</div>
+    <div>
+      <div class="sec-label">Cấu hình</div>
+
+      <p class="note">Tạo file <code>.env</code> trong thư mục bot. Telegram là tùy chọn — bot chạy bình thường nếu không cấu hình.</p>
+
+      <div class="code-block">
+<span class="c"># Bắt buộc — OKX API</span>
+<span class="k">OKX_API_KEY</span>=<span class="v">your_api_key</span>
+<span class="k">OKX_SECRET_KEY</span>=<span class="v">your_secret_key</span>
+<span class="k">OKX_PASSPHRASE</span>=<span class="v">your_passphrase</span>
+<span class="k">OKX_SIMULATED</span>=<span class="v">false</span>   <span class="c"># true = demo account</span>
+
+<span class="c"># Tùy chọn — Telegram alerts</span>
+<span class="k">TELEGRAM_TOKEN</span>=<span class="v">123456:ABC-DEF...</span>
+<span class="k">TELEGRAM_CHAT_ID</span>=<span class="v">-100123456789</span>
+<span class="k">BOT_NAME</span>=<span class="v">ARB</span></div>
+
+      <p class="note warn">Bot cần quyền <strong>Trade</strong> cho cả Spot và Futures trên OKX API key. Futures margin mode: <strong>Isolated</strong>.</p>
+    </div>
+  </div>
+
+  <!-- 06 CHANGELOG -->
+  <div class="section" style="border-bottom:none">
+    <div class="sec-num">06</div>
+    <div>
+      <div class="sec-label">Changelog</div>
+      <div class="cl-item">
+        <div class="cl-date">2026-05-30</div>
+        <div class="cl-body"><strong>v2.1</strong> — Fee thực tế ghi vào analytics (net_pnl, fee columns), backfill fee cho trade cũ, equity_curve theo net_pnl, luxury UI redesign.</div>
+      </div>
+      <div class="cl-item">
+        <div class="cl-date">2026-05-25</div>
+        <div class="cl-body"><strong>v2.0</strong> — Entry score blending (next_rate priority), adaptive position sizing (25–35%), fee estimation, smarter exit threshold, price divergence stop, Telegram notifications, auto-restart (3×), OKX verify after close.</div>
+      </div>
+      <div class="cl-item">
+        <div class="cl-date">trước đó</div>
+        <div class="cl-body"><strong>v1.0</strong> — Core funding arb: scan 21 coins, delta-neutral spot+futures, WebSocket realtime prices, analytics DB, state persistence, web dashboard.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

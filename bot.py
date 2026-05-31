@@ -7,6 +7,7 @@ from strategy import (
     get_funding_rates, get_available_usdt,
     open_position, close_position,
     check_exit_conditions, estimate_pnl,
+    get_okx_swap_positions,
     MIN_FUNDING_RATE, POSITION_PCT, MIN_USDT,
 )
 from excel_logger import log_pnl_snapshot, export_json, push_to_github
@@ -34,7 +35,7 @@ positions: list[dict] = []
 running = True
 
 
-def handle_stop(sig, frame):
+def handle_stop(*_):
     global running
     running = False
 
@@ -43,7 +44,7 @@ def _divider(char="─", n=52):
     log.info(char * n)
 
 
-def _print_positions(last_opps):
+def _print_positions():
     if not positions:
         return
     log.info(f"  VỊ THẾ ({len(positions)}/{MAX_POS}):")
@@ -80,12 +81,19 @@ def run():
         # ── Monitor vị thế ───────────────────────────────────────
         if positions:
             _divider()
-            _print_positions(last_opps)
+            _print_positions()
 
         to_close = [p for p in positions if check_exit_conditions(p)[0]]
         for p in to_close:
             log.info(f"  [{p['coin']}] Funding âm → đóng vị thế...")
-            close_position(p)
+            if not close_position(p):
+                log.error(f"  [{p['coin']}] Đóng thất bại — giữ lại, kiểm tra thủ công")
+                continue
+            time.sleep(1.0)
+            okx_pos = get_okx_swap_positions()
+            if okx_pos is not None and p['coin'] in okx_pos:
+                log.error(f"  [{p['coin']}] ⚠ OKX vẫn còn vị thế sau khi đóng — giữ local, cần can thiệp")
+                continue
             positions.remove(p)
             log.info(f"  [{p['coin']}] Đã đóng ✓")
 
@@ -161,7 +169,9 @@ def run():
     if positions:
         log.info(f"  Đóng {len(positions)} vị thế...")
         for p in list(positions):
-            close_position(p)
+            if not close_position(p):
+                log.error(f"  [{p['coin']}] Đóng thất bại — kiểm tra thủ công")
+                continue
             positions.remove(p)
             log.info(f"  [{p['coin']}] Đã đóng ✓")
     log.info("  Bot đã dừng.")
