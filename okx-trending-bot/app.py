@@ -30,11 +30,11 @@ from flask import Flask, jsonify, render_template, Response, stream_with_context
 
 from strategy import (
     SCAN_COINS, TIMEFRAME, ADX_MIN, EMA_FAST, EMA_SLOW,
-    STOP_ATR_MULT, TRAIL_ATR_MULT, RISK_PCT, MAX_POS_PCT, MIN_USDT, LEVERAGE,
+    RISK_PCT, MIN_USDT, LEVERAGE,
     PARTIAL_TP_ATR_MULT, ATR_PCT_MAX,
     get_candles, evaluate, get_available_usdt, get_last_price,
     calc_position_size, open_position, close_position, partial_close_position,
-    update_pnl_and_stop, last_closed_candle_ts, timeframe_to_seconds,
+    update_pnl_and_stop, last_closed_candle_ts,
     get_okx_swap_positions, get_trend_1d, is_correlated,
 )
 import analytics
