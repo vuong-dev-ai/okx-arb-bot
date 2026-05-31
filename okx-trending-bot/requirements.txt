@@ -1,0 +1,6 @@
+flask>=3.0
+python-dotenv>=1.0
+python-okx>=0.3.0
+pandas>=2.0
+numpy>=1.24
+openpyxl>=3.1

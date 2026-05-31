@@ -10,6 +10,12 @@ analytics.db-shm
 state.json
 pnl_log.xlsx
 
+# Trending bot runtime
+okx-trending-bot/analytics.db
+okx-trending-bot/analytics.db-wal
+okx-trending-bot/analytics.db-shm
+okx-trending-bot/state.json
+
 # Bot log
 bot.log
 *.log
