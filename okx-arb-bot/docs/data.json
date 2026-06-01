@@ -1,16 +1,16 @@
 {
-  "updated_at": "01/06/2026 21:36",
+  "updated_at": "01/06/2026 21:41",
   "usdt_balance": 2626.9859917574463,
-  "total_live_pnl": 0.0669,
+  "total_live_pnl": 0.0662,
   "positions": [
     {
       "coin": "BTC",
       "entry_price": 72268.9,
-      "current_price": 71554.3,
+      "current_price": 71516.2,
       "usdt_in": 1857.31,
       "funding_pnl": 0.0,
-      "price_pnl": 0.0152,
-      "total_pnl": 0.0152,
+      "price_pnl": 0.016,
+      "total_pnl": 0.016,
       "pct": 0.001,
       "n_payments": 0,
       "open_time": "01/06 19:36"
@@ -30,11 +30,11 @@
     {
       "coin": "XRP",
       "entry_price": 1.3,
-      "current_price": 1.28,
+      "current_price": 1.29,
       "usdt_in": 1041.82,
       "funding_pnl": 0.0,
-      "price_pnl": 0.0125,
-      "total_pnl": 0.0125,
+      "price_pnl": 0.011,
+      "total_pnl": 0.011,
       "pct": 0.001,
       "n_payments": 0,
       "open_time": "01/06 19:36"
