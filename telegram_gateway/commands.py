@@ -12,7 +12,7 @@ from telegram.ext import ContextTypes
 
 import clients
 from config import (
-    ALLOWED_CHAT_IDS, BOT_ENDPOINTS,
+    ALLOWED_CHAT_IDS,
     DD_THRESHOLD, PROFIT_THRESHOLD,
 )
 

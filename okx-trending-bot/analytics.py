@@ -7,7 +7,6 @@ Tables:
               notional, n_periods, pnl, roi_pct, exit_reason, status, max_favorable, max_adverse)
 """
 import os
-import math
 import time
 import sqlite3
 import threading

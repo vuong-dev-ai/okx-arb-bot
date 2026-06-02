@@ -18,7 +18,6 @@ Position sizing:
 import math
 import time
 import logging
-import datetime as dt
 from typing import Optional
 
 import numpy as np

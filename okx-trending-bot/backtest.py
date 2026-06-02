@@ -6,13 +6,12 @@ Không gọi API trong simulation — chỉ fetch data 1 lần lúc đầu.
 import math
 import time
 import logging
-import numpy as np
 import pandas as pd
 from typing import Optional
 
 from config import market_api
 from strategy import (
-    SCAN_COINS, TIMEFRAME, EMA_FAST, EMA_SLOW, ADX_MIN,
+    SCAN_COINS, TIMEFRAME, ADX_MIN,
     STOP_ATR_MULT, TRAIL_ATR_MULT, RISK_PCT, MAX_POS_PCT, MIN_USDT,
     PARTIAL_TP_ATR_MULT, PARTIAL_TP_RATIO, ATR_PCT_MAX,
     CORRELATED_GROUPS,
