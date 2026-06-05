@@ -50,12 +50,14 @@ GAP_PCT_MIN     = 0.05     # và ≥ 0.05% (đủ tách bạch, tránh sideway)
 ATR_PCT_MAX     = 8.0      # bỏ qua coin có ATR% > 8% — volatility quá cao, stop loss xa, rủi ro lớn
 
 STOP_ATR_MULT   = 2.0      # stop loss ban đầu
-TRAIL_ATR_MULT  = 3.0      # trailing stop sau khi giá đi thuận
+TRAIL_ATR_MULT  = 2.5      # trailing stop sau khi giá đi thuận (hạ từ 3.0 → giữ lãi tốt hơn)
 
-RISK_PCT        = 0.015    # 1.5% balance rủi ro mỗi trade
-MAX_POS_PCT     = 0.25     # tối đa 25% balance vào 1 trade (cap)
+RISK_PCT        = 0.0075   # 0.75% balance rủi ro mỗi trade (giảm trong giai đoạn validate stop thật)
+MAX_POS_PCT     = 0.15     # tối đa 15% balance vào 1 trade (cap)
 MIN_USDT        = 15.0     # vốn tối thiểu để mở
 LEVERAGE        = "5"      # isolated 5x
+MAX_LOSS_PCT    = 0.06     # kill-switch: lỗ > 6% notional → đóng NGAY (không chờ nến/EMA reverse)
+ALGO_AMEND_MIN_MOVE = 0.0015  # chỉ dời stop THẬT trên sàn khi trigger đổi ≥0.15% (tránh spam API)
 
 PARTIAL_TP_ATR_MULT  = 2.0   # đóng 50% khi profit >= 2×ATR
 PARTIAL_TP_RATIO     = 0.5   # tỉ lệ đóng một phần
@@ -363,6 +365,60 @@ def _set_leverage(swap_id):
         log.warning(f"set_leverage {swap_id}: {e}")
 
 
+# ════════════════════ NATIVE STOP (ALGO ORDER trên SÀN) ════════════════════
+# Đặt stop-loss THẬT trên OKX để vị thế được bảo vệ NGAY CẢ KHI bot tắt/crash/mất mạng.
+# Đây là fix cho sự cố BNB -525$ (bot tắt 4 ngày, stop chỉ chạy trong RAM nên vô dụng).
+def _close_side(side: str) -> str:
+    return 'sell' if side == 'LONG' else 'buy'
+
+
+def place_stop_algo(swap_id: str, side: str, sz_str: str, stop_px: float) -> Optional[str]:
+    """Đặt stop-loss conditional (market khi trigger, reduceOnly). Trả algoId hoặc None."""
+    try:
+        r = trade_api.place_algo_order(
+            instId=swap_id, tdMode="isolated",
+            side=_close_side(side), ordType="conditional",
+            sz=sz_str, reduceOnly="true",
+            slTriggerPx=str(stop_px), slOrdPx="-1",   # -1 = đóng market khi chạm trigger
+            slTriggerPxType="last",
+        )
+        if r.get('code') == '0' and r.get('data'):
+            return (r['data'][0] or {}).get('algoId') or None
+        d = (r.get('data') or [{}])[0]
+        log.warning(f"[{swap_id}] đặt stop algo lỗi [{d.get('sCode')}]: {d.get('sMsg') or r.get('msg')}")
+    except Exception as e:
+        log.warning(f"[{swap_id}] đặt stop algo exception: {e}")
+    return None
+
+
+def cancel_stop_algo(swap_id: str, algo_id: Optional[str]) -> None:
+    """Hủy stop algo (best-effort, im lặng nếu đã không còn)."""
+    if not algo_id:
+        return
+    try:
+        trade_api.cancel_algo_order([{'algoId': algo_id, 'instId': swap_id}])
+    except Exception as e:
+        log.debug(f"[{swap_id}] hủy stop algo {algo_id}: {e}")
+
+
+def amend_stop_algo(swap_id: str, algo_id: Optional[str],
+                    new_stop: float = None, new_sz: str = None) -> bool:
+    """Cập nhật trigger/size của stop algo (dùng cho trailing & partial-TP). Trả True nếu OK."""
+    if not algo_id:
+        return False
+    kwargs = dict(instId=swap_id, algoId=algo_id)
+    if new_stop is not None:
+        kwargs['newSlTriggerPx'] = str(new_stop)
+    if new_sz is not None:
+        kwargs['newSz'] = str(new_sz)
+    try:
+        r = trade_api.amend_algo_order(**kwargs)
+        return r.get('code') == '0'
+    except Exception as e:
+        log.debug(f"[{swap_id}] amend stop algo {algo_id}: {e}")
+        return False
+
+
 def open_position(coin: str, side: str, notional_usdt: float, snap: dict) -> Optional[dict]:
     """Mở vị thế trên SWAP. side ∈ {'LONG','SHORT'}."""
     swap_id = f"{coin}-USDT-SWAP"
@@ -399,6 +455,14 @@ def open_position(coin: str, side: str, notional_usdt: float, snap: dict) -> Opt
 
     atr = float(snap.get('atr') or 0)
     stop = (price - STOP_ATR_MULT * atr) if side == 'LONG' else (price + STOP_ATR_MULT * atr)
+
+    # Đặt stop-loss THẬT trên sàn (sống sót khi bot offline). Không chặn lệnh nếu fail — chỉ cảnh báo.
+    sl_algo_id = place_stop_algo(swap_id, side, sz_str, round(stop, 8)) if atr > 0 else None
+    if sl_algo_id:
+        log.info(f"[{coin}] Stop THẬT trên sàn ✓ algoId={sl_algo_id} @ ${stop:.4f}")
+    else:
+        log.warning(f"[{coin}] ⚠ KHÔNG đặt được stop thật trên sàn — chỉ còn stop phần mềm (rủi ro khi bot tắt)")
+
     return {
         'coin':         coin,
         'swap_id':      swap_id,
@@ -409,6 +473,8 @@ def open_position(coin: str, side: str, notional_usdt: float, snap: dict) -> Opt
         'entry_price':  price,
         'entry_atr':    atr,
         'stop_price':   stop,
+        'sl_algo_id':   sl_algo_id,         # id lệnh stop trên sàn (persist để hủy/sửa sau)
+        'sl_algo_px':   round(stop, 8),     # trigger hiện tại của stop trên sàn
         'trail_anchor': price,           # giá cao nhất (long) / thấp nhất (short) đạt được
         'open_time':    time.time(),
         'notional':     contracts * ct_val * price,
@@ -416,6 +482,8 @@ def open_position(coin: str, side: str, notional_usdt: float, snap: dict) -> Opt
 
 
 def close_position(position: dict) -> bool:
+    # KHÔNG hủy stop algo ở đây: giữ nó tới khi _close_one xác nhận đã đóng (nếu đóng fail thì vị thế
+    # vẫn còn stop bảo vệ). reduceOnly khiến algo + close không thể đóng lố nhau.
     sz_str = _fmt_sz(position['contracts'], position['lot_sz'])
     okx_side = 'sell' if position['side'] == 'LONG' else 'buy'
     r = trade_api.place_order(
@@ -450,6 +518,9 @@ def partial_close_position(position: dict, ratio: float = PARTIAL_TP_RATIO) -> b
         return False
     position['contracts'] -= half
     position['notional']   = position['contracts'] * position['ct_val'] * position['entry_price']
+    # Thu nhỏ size của stop THẬT trên sàn cho khớp phần còn lại (best-effort; reduceOnly vẫn cap an toàn nếu fail)
+    amend_stop_algo(position['swap_id'], position.get('sl_algo_id'),
+                    new_sz=_fmt_sz(position['contracts'], position['lot_sz']))
     return True
 
 

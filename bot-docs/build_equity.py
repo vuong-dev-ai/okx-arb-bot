@@ -8,7 +8,7 @@ import os
 import sys
 import sqlite3
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 
 try:
     sys.stdout.reconfigure(encoding='utf-8')

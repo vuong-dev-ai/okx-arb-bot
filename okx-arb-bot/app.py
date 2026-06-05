@@ -24,11 +24,12 @@ import openpyxl
 from flask import Flask, jsonify, render_template, Response, stream_with_context
 
 from strategy import (
-    get_funding_rates, get_available_usdt,
+    get_funding_rates, get_available_usdt, get_funding_income,
     open_position, close_position, sell_spot,
     check_exit_conditions, estimate_pnl, get_spot_price,
-    get_okx_swap_positions,
-    MIN_FUNDING_RATE, POSITION_PCT, MIN_USDT, PRICE_STOP_PCT,
+    get_okx_swap_positions, funding_payments_since, collectible_rate,
+    MIN_FUNDING_RATE, MIN_USDT, PRICE_STOP_PCT,
+    ROUND_TRIP_FEE, FEE_SAFETY, ENTRY_MIN_SETTLEMENTS, EXIT_MIN_SETTLEMENTS,
     adaptive_position_pct, SCAN_COINS,
 )
 from excel_logger import log_pnl_snapshot, export_json, push_to_github, EXCEL_FILE
@@ -68,6 +69,7 @@ _state = {
 MAX_POS         = 3
 SCAN_INT        = 300       # scan funding rate mỗi 5 phút
 MON_INT         = 2         # đọc giá WS + cập nhật PnL MỖI 2 GIÂY (realtime)
+BAL_INT         = 15        # đọc số dư REST mỗi 15s (tách khỏi MON 2s — đỡ đập API)
 FUNDING_CHK_INT = 30        # check funding rate exit-condition mỗi 30s (rate đổi 8h/lần)
 TICK_LOG_INT    = 60        # ghi tick log vào DB mỗi 60s
 RECON_INT       = 150       # reconcile với OKX mỗi 2.5 phút
@@ -126,6 +128,14 @@ def _end_close(coin):
         _state['closing'].discard(coin)
 
 
+def _arm_close_backoff(p):
+    """Đóng thất bại → lùi lịch thử lại (exponential, tối đa 60s) thay vì đập API mỗi 2s."""
+    n = p.get('_close_attempts', 0)
+    p['_close_attempts']   = n + 1
+    p['_close_fail_until'] = time.time() + min(60, 5 * (2 ** n))
+    p['_exit'] = False  # sẽ tự bật lại ở chu kỳ sau nếu điều kiện thoát vẫn đúng
+
+
 # ── IO offload (fire-and-forget worker để bot không bị treo bởi git/Excel) ─
 def _offload(key, fn, *args):
     with _lock:
@@ -159,9 +169,12 @@ def _close_one(p, reason):
     if not _begin_close(coin):
         return False
     try:
-        # PnL tươi để ghi analytics — fallback về cache nếu REST fail
+        # PnL tươi để ghi analytics — funding lấy số THẬT từ bills, fallback cache nếu REST fail
         try:
-            final_pnl = estimate_pnl(p)
+            fa = get_funding_income(p['swap_id'], p['open_time'])
+            if fa is None:
+                fa = p.get('_funding_actual')
+            final_pnl = estimate_pnl(p, funding_override=fa)
         except Exception:
             final_pnl = None
         final_pnl = final_pnl or p.get('_pnl')
@@ -176,18 +189,25 @@ def _close_one(p, reason):
         # VERIFY futures với OKX trước khi xóa local
         time.sleep(1.0)  # cho exchange settle
         okx_pos = get_okx_swap_positions()
-        if okx_pos is not None and coin in okx_pos:
-            _log(f"[{coin}] ⚠ Sau khi đóng, OKX vẫn còn vị thế futures — GIỮ local, cần can thiệp")
+        if okx_pos is None:
+            # Không xác định được trạng thái OKX → lùi lịch, thử lại sau (KHÔNG đập API mỗi 2s)
+            _log(f"[{coin}] ⚠ Không query được vị thế OKX khi đóng — backoff, thử lại sau")
+            _arm_close_backoff(p)
+            return False
+        if coin in okx_pos:
+            # Futures CHƯA đóng được (reduceOnly fail / chưa settle) → backoff, thử lại sau
+            _log(f"[{coin}] ⚠ Sau khi đóng, OKX vẫn còn futures — backoff, thử lại sau")
+            _arm_close_backoff(p)
             return False
 
-        # Futures đã đóng nhưng spot leg fail → thử bán nốt spot (sell_spot tự co theo balance)
+        # Tới đây futures đã KHÔNG còn trên OKX (đã đóng hoặc đã mất). Bán nốt spot rồi xóa local.
+        # KHÔNG gọi lại close_position (sẽ reduceOnly-buy lên futures đã hết → 51169 storm như log 18:19).
         if not close_ok:
-            _log(f"[{coin}] ⚠ Futures OK nhưng spot leg lỗi — retry bán spot...")
             if not sell_spot(p['spot_id'], p['coin_amount']):
-                _log(f"[{coin}] ⚠ Spot vẫn fail — GIỮ local position, vào sàn kiểm tra coin {p['spot_id']}")
-                return False
+                _log(f"[{coin}] ⚠ Spot chưa bán hết — cần sweep thủ công, vẫn đóng local (futures đã hết)")
 
-        # Confirmed closed
+        # Confirmed flat (futures gone)
+        p['_close_attempts'] = 0
         analytics.record_close(p, final_pnl, reason=reason)
         with _lock:
             _state['positions'] = [x for x in _state['positions'] if x['coin'] != coin]
@@ -199,6 +219,7 @@ def _close_one(p, reason):
         return True
     except Exception as e:
         _log(f"[{coin}] Lỗi đóng: {e}")
+        _arm_close_backoff(p)
         return False
     finally:
         _end_close(coin)
@@ -212,7 +233,10 @@ def _reconcile_remove(p):
         return 0
     try:
         try:
-            final_pnl = estimate_pnl(p) or {}
+            fa = get_funding_income(p['swap_id'], p['open_time'])
+            if fa is None:
+                fa = p.get('_funding_actual')
+            final_pnl = estimate_pnl(p, funding_override=fa) or {}
         except Exception:
             final_pnl = {}
         # Futures đã đóng bên ngoài — bán nốt spot để giải phóng hedge
@@ -247,6 +271,7 @@ def _reconcile_with_okx():
 
 def _bot():
     last_scan = last_mon = last_excel = last_push = last_recon = last_tick_log = last_fund_chk = 0
+    last_bal = 0
     last_opps: list = []
     _my_thread = threading.current_thread()
 
@@ -283,16 +308,26 @@ def _bot():
             do_fund_chk  = (now - last_fund_chk) >= FUNDING_CHK_INT
             for p in positions:
                 try:
-                    # Ưu tiên giá WS (sub-second), fallback REST
-                    spot_price = _get_spot_price(p['spot_id'])
-                    p['_pnl']  = estimate_pnl(p, price=spot_price)
-                    # Funding rate chỉ check thưa (rate đổi mỗi 8h)
+                    # Funding rate + funding THỰC NHẬN chỉ check thưa (rate đổi mỗi 8h)
                     if do_fund_chk:
                         ok, rate       = check_exit_conditions(p)
                         p['_cur_rate'] = rate
+                        # Funding thực tế từ OKX bills → ghi sổ trung thực (thay ước lượng)
+                        fa = get_funding_income(p['swap_id'], p['open_time'])
+                        if fa is not None:
+                            p['_funding_actual'] = fa
                         if ok:
-                            p['_exit']        = True
-                            p['_exit_reason'] = 'funding_flip'
+                            # Min-hold: chỉ thoát funding_flip khi đã thu đủ EXIT_MIN_SETTLEMENTS kỳ funding
+                            # (bù phí), HOẶC rate đã ÂM (đang phải TRẢ funding).
+                            # Tránh đóng n_payments=0 lỗ phí trắng (6/12 lệnh cũ lỗ kiểu này).
+                            n_paid = funding_payments_since(p['open_time'])
+                            if n_paid >= EXIT_MIN_SETTLEMENTS or (rate is not None and rate < 0):
+                                p['_exit']        = True
+                                p['_exit_reason'] = 'funding_flip'
+                    # Ưu tiên giá WS (sub-second), fallback REST. Funding dùng số thật nếu có.
+                    spot_price = _get_spot_price(p['spot_id'])
+                    p['_pnl']  = estimate_pnl(p, price=spot_price,
+                                              funding_override=p.get('_funding_actual'))
                     # Price stop — thoát nếu giá diverge quá PRICE_STOP_PCT
                     if not p.get('_exit') and p.get('_pnl'):
                         notional = p['contracts'] * p['ct_val'] * p['entry_price']
@@ -307,14 +342,20 @@ def _bot():
             if do_tick_log: last_tick_log = now
             if do_fund_chk: last_fund_chk = now
 
-            for p in [x for x in positions if x.get('_exit')]:
+            now_close = time.time()
+            for p in [x for x in positions if x.get('_exit') and now_close >= x.get('_close_fail_until', 0)]:
                 reason = p.get('_exit_reason') or 'funding_flip'
                 label  = 'Price stop' if reason == 'price_stop' else 'Funding rate thấp'
                 _log(f"[{p['coin']}] {label} → đóng vị thế...")
                 _close_one(p, reason=reason)
 
+            # Số dư đọc thưa hơn (REST) — không cần realtime như giá
+            if now - last_bal >= BAL_INT:
+                bal = get_available_usdt()      # ngoài lock: tránh giữ lock khi gọi mạng
+                with _lock:
+                    _state['usdt'] = bal
+                last_bal = now
             with _lock:
-                _state['usdt']        = get_available_usdt()
                 _state['last_update'] = datetime.now().strftime('%H:%M:%S')
             last_mon = now
 
@@ -359,6 +400,14 @@ def _bot():
                             continue
                         if opp['funding_rate'] < MIN_FUNDING_RATE:
                             break
+                        # Cổng EV theo phí dựa trên funding DỰ BÁO thực thu ở kỳ kế (next_rate),
+                        # KHÔNG phải rate hiện tại (rate VỪA TRẢ ở kỳ trước — nhìn lại quá khứ).
+                        # Fix gốc loạt lệnh npay=0 ăn phí trắng: NEAR/OP vào @1.5% nhưng next≈0 → thực thu 0.
+                        coll = collectible_rate(opp)
+                        if coll * ENTRY_MIN_SETTLEMENTS < ROUND_TRIP_FEE * FEE_SAFETY:
+                            _log(f"[{opp['coin']}] Bỏ qua — EV thấp (thực thu {coll*100:.4f}%×{ENTRY_MIN_SETTLEMENTS}kỳ "
+                                 f"< phí {ROUND_TRIP_FEE*FEE_SAFETY*100:.3f}% · cur={opp['funding_rate']*100:.3f}% next={opp['next_rate']*100:.3f}%)")
+                            continue
                         # Bỏ qua coin có lịch sử rất xấu (score < -1.5)
                         if opp.get('hist_score', 0) < -1.5:
                             _log(f"[{opp['coin']}] Bỏ qua — lịch sử kém (score={opp['hist_score']:.2f})")
@@ -392,7 +441,7 @@ def _bot():
                 u  = _state['usdt']
             if ps:
                 def _do_excel(positions=ps, usdt=u):
-                    pl = [estimate_pnl(p) for p in positions]
+                    pl = [estimate_pnl(p, funding_override=p.get('_funding_actual')) for p in positions]
                     log_pnl_snapshot(positions, pl, usdt)
                     _log("Ghi Excel ✓ → pnl_log.xlsx")
                 _offload('excel', _do_excel)
@@ -405,7 +454,7 @@ def _bot():
                 u  = _state['usdt']
             opps_copy = list(last_opps)
             def _do_push(positions=ps, usdt=u, opps=opps_copy):
-                pl = [p.get('_pnl') or estimate_pnl(p) for p in positions]
+                pl = [p.get('_pnl') or estimate_pnl(p, funding_override=p.get('_funding_actual')) for p in positions]
                 export_json({'positions': positions, 'pnl_list': pl,
                              'opportunities': opps, 'usdt': usdt})
                 if push_to_github():
@@ -472,6 +521,7 @@ def _build_status_payload():
             'cur_price':   pnl.get('price'),
             'usdt_in':     round(vin, 2),
             'funding_pnl': round(pnl.get('funding_pnl', 0), 4),
+            'funding_actual': pnl.get('funding_actual', False),
             'price_pnl':   round(pnl.get('price_pnl', 0), 4),
             'total_pnl':   round(pnl.get('total_pnl', 0), 4),
             'net_pnl':     round(pnl.get('net_pnl', 0), 4),

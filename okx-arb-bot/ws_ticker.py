@@ -104,11 +104,12 @@ class TickerWS:
             self.connected = False
             if self.running:
                 self.reconnects += 1
-                # Nếu kết nối duy trì > 60s trước khi rớt, reset backoff
+                # Vừa nhận message gần đây (kết nối đang khỏe) → drop tạm thời, reconnect nhanh.
+                # Im lặng đã lâu (kết nối hỏng) → tăng backoff tránh đập liên tục.
                 if self.last_msg_ts and (time.time() - self.last_msg_ts) < 60:
-                    backoff = min(backoff * 2, 30)
-                else:
                     backoff = 3
+                else:
+                    backoff = min(backoff * 2, 30)
                 time.sleep(backoff)
 
     def _on_open(self, ws):

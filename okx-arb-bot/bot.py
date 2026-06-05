@@ -58,8 +58,7 @@ def _print_positions():
 
 
 def run():
-    global running, positions
-
+    # `running` chỉ đọc (đặt False trong handle_stop), `positions` mutate in-place → không cần global
     signal.signal(signal.SIGINT,  handle_stop)
     signal.signal(signal.SIGTERM, handle_stop)
 
@@ -140,7 +139,7 @@ def run():
             pnl_list = [estimate_pnl(p) for p in positions]
             try:
                 log_pnl_snapshot(positions, pnl_list, usdt_bal)
-                log.info(f"  [Excel] Ghi xong → pnl_log.xlsx")
+                log.info("  [Excel] Ghi xong → pnl_log.xlsx")
             except Exception as e:
                 log.warning(f"  [Excel] Lỗi: {e}")
             last_excel = now

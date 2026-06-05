@@ -31,7 +31,8 @@ def funding_payments_since(open_ts, now_ts=None):
         now_ts = time.time()
     if now_ts <= open_ts:
         return 0
-    open_dt = dt.datetime.utcfromtimestamp(open_ts)
+    # tz-aware UTC (utcfromtimestamp deprecated từ Python 3.12)
+    open_dt = dt.datetime.fromtimestamp(open_ts, dt.timezone.utc)
     # boundary tiếp theo strictly > open_ts
     next_h = ((open_dt.hour // 8) + 1) * 8
     if next_h >= 24:
@@ -49,25 +50,34 @@ SCAN_COINS = [
     "LTC", "BCH", "NEAR", "TON", "PEPE", "FLOKI",
 ]
 
-MIN_FUNDING_RATE = 0.0001    # 0.01%/8h = 0.03%/ngày (~11% pa) — sàn OKX
-POSITION_PCT     = 0.3       # 30% số dư mỗi vị thế
-MIN_USDT         = 15.0
+# ── Ngưỡng vào/ra (đã chỉnh để KHÔNG churn lỗ phí) ──────────────────
+# Phí round-trip = (0.1% spot + 0.05% swap) × 2 chân = 0.30% notional.
+# Trước đây MIN_FUNDING_RATE=0.01%/8h: cần ~30 kỳ funding (~10 ngày) mới hoà phí,
+# nhưng bot lại thoát sau vài giờ → lỗ phí 100%. Nâng ngưỡng để 1 lệnh kỳ vọng
+# thu đủ funding bù phí.
+MIN_FUNDING_RATE = 0.0015    # 0.15%/8h — sàn vào lệnh (≈3 kỳ funding > phí round-trip)
+POSITION_PCT     = 0.15      # 15% số dư mỗi vị thế (giảm từ 30% → hạ phí tuyệt đối)
+MIN_USDT         = 50.0      # bỏ qua lệnh quá nhỏ (phí cố định lấn át funding)
 LEVERAGE         = "5"
 
 SPOT_FEE_RATE    = 0.001    # 0.10% taker — spot
 FUTURES_FEE_RATE = 0.0005   # 0.05% taker — futures
-MIN_STAY_RATE    = 0.00005  # 0.005%/8h — exit nếu rate thấp hơn mức này
-PRICE_STOP_PCT   = 0.02     # thoát khi price_pnl < -2% notional
+ROUND_TRIP_FEE   = (SPOT_FEE_RATE + FUTURES_FEE_RATE) * 2   # 0.30% — mở+đóng cả 2 chân
+FEE_SAFETY       = 1.5      # biên an toàn: funding kỳ vọng phải vượt phí FEE_SAFETY lần
+ENTRY_MIN_SETTLEMENTS = 3   # số kỳ funding kỳ vọng giữ — dùng cho cổng EV vào lệnh
+EXIT_MIN_SETTLEMENTS  = 2   # KHÔNG thoát funding_flip trước khi thu đủ N kỳ funding
+MIN_STAY_RATE    = 0.00005  # 0.005%/8h — rate thấp hơn mức này coi như "flip"
+PRICE_STOP_PCT   = 0.05     # thoát khi price_pnl < -5% notional (nới: vị thế đã hedge nên 2% là nhiễu basis)
 
 
 def adaptive_position_pct(funding_rate: float) -> float:
-    """Scale vốn theo funding rate — rate cao vào nhiều hơn."""
-    if funding_rate >= 0.0005:    # >= 0.05%/8h
-        return 0.35
-    elif funding_rate >= 0.0002:  # >= 0.02%/8h
-        return POSITION_PCT       # 0.30
+    """Scale vốn theo funding rate — rate cao vào nhiều hơn (đã hạ trần để giảm phí)."""
+    if funding_rate >= 0.005:     # >= 0.5%/8h — cơ hội rất tốt
+        return 0.20
+    elif funding_rate >= 0.002:   # >= 0.2%/8h
+        return POSITION_PCT       # 0.15
     else:
-        return 0.25
+        return 0.10
 
 
 def get_funding_rates():
@@ -96,6 +106,25 @@ def get_funding_rates():
     return results
 
 
+def collectible_rate(opp) -> float:
+    """Rate kỳ vọng THỰC THU ở (các) settlement sắp tới.
+
+    Lý do: `funding_rate` của OKX là rate VỪA TRẢ ở kỳ trước (nhìn lại quá khứ),
+    còn cái ta sẽ nhận là `nextFundingRate` (dự báo kỳ kế). Vào lệnh theo spike rate
+    hiện tại đã gây loạt lệnh npay=0 lỗ phí trắng (NEAR 1.5%→-6$, OP 1.5%→-4$ trong 6 phút):
+    rate hiện tại cao nhưng next≈0 nên thực thu = 0.
+
+    Trả về rate dùng cho cổng EV vào lệnh:
+      - Có cả next & current dương → lấy min (thận trọng, phải cùng xác nhận).
+      - Chỉ current dương, next≈0 → coi như 0 (KHÔNG vào — chính là spike đảo chiều).
+    """
+    nr  = opp.get('next_rate') or 0.0
+    cur = opp.get('funding_rate') or 0.0
+    if nr > 0 and cur > 0:
+        return min(nr, cur)
+    return max(0.0, nr)
+
+
 def get_available_usdt():
     resp = _retry(lambda: account_api.get_account_balance(ccy="USDT"),
                   attempts=3, base_delay=0.3, what='account_balance')
@@ -107,6 +136,31 @@ def get_available_usdt():
     except Exception as e:
         log.error(f"Parse số dư: {e}")
     return 0.0
+
+
+def get_funding_income(swap_id, since_ts):
+    """Tổng funding THỰC NHẬN (USDT) cho swap_id kể từ since_ts, đọc từ OKX bills (type=8).
+
+    Dương = nhận (short khi funding>0), âm = trả. Trả None nếu API fail (caller fallback
+    sang ước lượng). Trả 0.0 nếu chưa qua settlement nào — đó là con số THẬT (npay=0).
+    Bills chỉ lưu 7 ngày gần nhất; vị thế arb giữ < 1 ngày nên đủ.
+    """
+    resp = _retry(lambda: account_api.get_account_bills(instType="SWAP", type="8"),
+                  attempts=2, base_delay=0.3, what=f'bills {swap_id}')
+    if not resp or resp.get('code') != '0':
+        return None
+    since_ms = since_ts * 1000.0
+    total = 0.0
+    for b in (resp.get('data') or []):
+        try:
+            if b.get('instId') != swap_id:
+                continue
+            if float(b.get('ts') or 0) < since_ms:
+                continue
+            total += float(b.get('balChg') or b.get('pnl') or 0)
+        except (ValueError, TypeError):
+            continue
+    return total
 
 
 def get_spot_price(inst_id):
@@ -210,7 +264,9 @@ def open_position(opportunity, usdt_amount):
         log.warning(f"  [{coin}] Bỏ qua — vốn ${usdt_amount:.2f} < tối thiểu ${min_cost:.2f}")
         return None
 
-    spot_usdt  = round(contracts * ct_val * price, 2)
+    # Mua dư bù phí spot để coin nhận về ≈ contracts*ct_val (khớp chân short → giữ delta-neutral).
+    # Trước đây mua đúng contracts*ct_val*price nên sau phí 0.1% giữ ÍT hơn short → lệch net-short, lỗ khi giá lên.
+    spot_usdt  = round(contracts * ct_val * price / (1 - SPOT_FEE_RATE), 2)
     sz_str     = _fmt_contracts(contracts, lot_sz)
 
     _set_leverage(swap_id)
@@ -346,18 +402,27 @@ def check_exit_conditions(position):
     return False, None
 
 
-def estimate_pnl(position, price=None):
-    """Nếu `price` được truyền vào → dùng (vd từ WS cache), nếu không → REST."""
+def estimate_pnl(position, price=None, funding_override=None):
+    """Tính PnL của vị thế arb.
+
+    `price`: giá spot (vd từ WS cache); None → REST.
+    `funding_override`: funding THỰC NHẬN từ OKX bills (xem get_funding_income).
+        Nếu truyền vào → dùng số thật; nếu None → ước lượng = entry_rate × notional × n_kỳ
+        (kém chính xác vì funding đổi mỗi 8h, dùng làm fallback khi bills fail).
+    """
     if price is None:
         price = get_spot_price(position['spot_id'])
     if not price:
         return None
 
     n_payments  = funding_payments_since(position['open_time'])
-    funding_pnl = (position['entry_funding_rate']
-                   * position['contracts']
-                   * position['ct_val']
-                   * price * n_payments)
+    if funding_override is not None:
+        funding_pnl = funding_override
+    else:
+        funding_pnl = (position['entry_funding_rate']
+                       * position['contracts']
+                       * position['ct_val']
+                       * price * n_payments)
     price_change  = price - position['entry_price']
     net_price_pnl = (price_change * position['coin_amount']
                      - price_change * position['contracts'] * position['ct_val'])
@@ -366,11 +431,12 @@ def estimate_pnl(position, price=None):
     fee_est   = notional * (SPOT_FEE_RATE + FUTURES_FEE_RATE) * 2  # round-trip cả 2 legs
 
     return {
-        'price':       price,
-        'funding_pnl': funding_pnl,
-        'price_pnl':   net_price_pnl,
-        'total_pnl':   funding_pnl + net_price_pnl,
-        'net_pnl':     funding_pnl + net_price_pnl - fee_est,
-        'fee_est':     round(fee_est, 4),
-        'n_payments':  n_payments,
+        'price':          price,
+        'funding_pnl':    funding_pnl,
+        'funding_actual': funding_override is not None,
+        'price_pnl':      net_price_pnl,
+        'total_pnl':      funding_pnl + net_price_pnl,
+        'net_pnl':        funding_pnl + net_price_pnl - fee_est,
+        'fee_est':        round(fee_est, 4),
+        'n_payments':     n_payments,
     }

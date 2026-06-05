@@ -32,10 +32,12 @@ from strategy import (
     SCAN_COINS, TIMEFRAME, ADX_MIN, EMA_FAST, EMA_SLOW,
     RISK_PCT, MIN_USDT, LEVERAGE,
     PARTIAL_TP_ATR_MULT, ATR_PCT_MAX,
+    MAX_LOSS_PCT, ALGO_AMEND_MIN_MOVE,
     get_candles, evaluate, get_available_usdt, get_last_price,
     calc_position_size, open_position, close_position, partial_close_position,
     update_pnl_and_stop, last_closed_candle_ts,
     get_okx_swap_positions, get_trend_1d, is_correlated,
+    amend_stop_algo, cancel_stop_algo,
 )
 import analytics
 import notifier
@@ -75,6 +77,7 @@ _state = {
 
 MAX_POS       = 3
 MON_INT       = 2               # đọc giá WS cache + check trailing stop MỖI 2 GIÂY
+BAL_INT       = 15              # đọc số dư REST mỗi 15s (tách khỏi MON 2s — đỡ đập API)
 
 # ── Backtest state ────────────────────────────────────────────────
 _bt_lock  = threading.Lock()
@@ -107,7 +110,8 @@ def _persist_state():
     try:
         with _lock:
             snap = [
-                {k: v for k, v in p.items() if not k.startswith('_') or k == '_trade_id'}
+                # Giữ _tp_fired để partial-TP KHÔNG kích lại sau restart (fix TC-04: đóng lố thêm 50%)
+                {k: v for k, v in p.items() if not k.startswith('_') or k in ('_trade_id', '_tp_fired')}
                 for p in _state['positions']
             ]
         tmp = STATE_FILE + '.tmp'
@@ -143,6 +147,14 @@ def _end_close(coin):
         _state['closing'].discard(coin)
 
 
+def _arm_close_backoff(p):
+    """Đóng thất bại → lùi lịch thử lại (exponential, tối đa 60s) thay vì đập API mỗi 2s."""
+    n = p.get('_close_attempts', 0)
+    p['_close_attempts']   = n + 1
+    p['_close_fail_until'] = time.time() + min(60, 5 * (2 ** n))
+    p['_exit'] = False  # sẽ tự bật lại ở chu kỳ sau nếu điều kiện thoát vẫn đúng
+
+
 def _offload(key, fn, *args):
     with _lock:
         if key in _state['io_busy']:
@@ -172,10 +184,18 @@ def _close_one(p, reason, exit_price=None):
         # VERIFY với OKX trước khi xóa local
         time.sleep(1.0)
         okx_pos = get_okx_swap_positions()
-        if okx_pos is not None and coin in okx_pos:
-            _log(f"[{coin}] ⚠ Sau khi đóng, OKX vẫn còn vị thế — GIỮ local, cần can thiệp")
+        if okx_pos is None:
+            _log(f"[{coin}] ⚠ Không query được vị thế OKX khi đóng — backoff, thử lại sau")
+            _arm_close_backoff(p)
+            return False
+        if coin in okx_pos:
+            _log(f"[{coin}] ⚠ Sau khi đóng, OKX vẫn còn vị thế — backoff, thử lại sau (stop thật vẫn còn bảo vệ)")
+            _arm_close_backoff(p)
             return False
 
+        # Đã đóng xong → hủy nốt stop thật trên sàn (nếu còn treo)
+        cancel_stop_algo(p['swap_id'], p.get('sl_algo_id'))
+        p['_close_attempts'] = 0
         analytics.record_close(p, exit_price, reason=reason,
                                max_fav=p.get('_max_fav'), max_adv=p.get('_max_adv'))
         with _lock:
@@ -193,6 +213,7 @@ def _close_one(p, reason, exit_price=None):
         return True
     except Exception as e:
         _log(f"[{coin}] Lỗi đóng: {e}")
+        _arm_close_backoff(p)
         return False
     finally:
         _end_close(coin)
@@ -206,6 +227,8 @@ def _reconcile_remove(p):
     if not _begin_close(coin):
         return 0
     try:
+        # Vị thế đã biến mất khỏi OKX (có thể stop algo đã fire). Hủy nốt algo treo nếu còn.
+        cancel_stop_algo(p['swap_id'], p.get('sl_algo_id'))
         try:
             last = get_last_price(p['swap_id']) or p['entry_price']
         except Exception:
@@ -240,6 +263,7 @@ def _reconcile_with_okx():
 
 def _bot():
     last_mon = last_scan = last_recon = last_tick_log = 0
+    last_bal = 0
     _my_thread = threading.current_thread()
 
     _log("━━━ Bot Trend-Following khởi động ━━━")
@@ -255,6 +279,24 @@ def _bot():
         n = _reconcile_with_okx()
         if n:
             _log(f"Reconcile: xóa {n} vị thế phantom (không còn trên OKX)")
+
+        # Watchdog khởi động lại: nếu giá đã VƯỢT stop của vị thế còn lại → đóng NGAY.
+        # Phòng trường hợp bot từng tắt lâu (như sự cố BNB -525$ giữ 4 ngày không ai cắt).
+        with _lock:
+            restored_open = list(_state['positions'])
+        for p in restored_open:
+            try:
+                px = _get_price(p['swap_id']) or get_last_price(p['swap_id'])
+                stop_px = p.get('stop_price')
+                if not px or not stop_px:
+                    continue
+                beyond = ((p['side'] == 'LONG'  and px <= stop_px) or
+                          (p['side'] == 'SHORT' and px >= stop_px))
+                if beyond:
+                    _log(f"[{p['coin']}] ⚠ Khởi động lại: giá {px:.4f} đã vượt stop {stop_px:.4f} → đóng ngay")
+                    _close_one(p, reason='stale_stop', exit_price=px)
+            except Exception as e:
+                _log(f"[{p['coin']}] watchdog lỗi: {e}")
 
     with _lock:
         _state['usdt'] = get_available_usdt()
@@ -279,9 +321,20 @@ def _bot():
                         continue
                     pnl = update_pnl_and_stop(p, price)
                     p['_pnl']  = pnl
+                    # Dời stop THẬT trên sàn theo trailing (chỉ khi đổi đủ lớn để không spam API)
+                    new_stop = pnl.get('stop')
+                    if p.get('sl_algo_id') and new_stop:
+                        prev = p.get('sl_algo_px') or p['entry_price']
+                        if prev and abs(new_stop - prev) / prev >= ALGO_AMEND_MIN_MOVE:
+                            if amend_stop_algo(p['swap_id'], p['sl_algo_id'], new_stop=round(new_stop, 8)):
+                                p['sl_algo_px'] = round(new_stop, 8)
                     if pnl.get('hit_stop', False):
                         p['_exit'] = True
                         p['_exit_reason'] = 'trail_stop'
+                    elif pnl.get('pct', 0) <= -MAX_LOSS_PCT * 100:
+                        # Kill-switch cứng: lỗ vượt ngưỡng → đóng NGAY, không chờ nến/EMA reverse (fix vụ ATOM bleed -19%)
+                        p['_exit'] = True
+                        p['_exit_reason'] = 'hard_stop'
                     p['_max_fav'] = max(p.get('_max_fav') or 0, pnl['pct'])
                     p['_max_adv'] = min(p.get('_max_adv') or 0, pnl['pct'])
                     if do_tick_log:
@@ -305,24 +358,42 @@ def _bot():
                     _log(f"[{p['coin']}] Partial TP triggered @ ${price:.4f}")
                     if partial_close_position(p):
                         p['_tp_fired'] = True
+                        # Khóa BREAKEVEN cho phần còn lại: đã chốt 50% lãi tại 2×ATR nên cả lệnh
+                        # đã dương — kéo stop về entry để runner không thể quay lại thành lỗ.
+                        be = p['entry_price']
+                        if p['side'] == 'LONG':
+                            p['stop_price'] = max(p['stop_price'], be)
+                        else:
+                            p['stop_price'] = min(p['stop_price'], be)
+                        # Đồng bộ stop THẬT trên sàn (sống cả khi bot offline)
+                        if p.get('sl_algo_id') and amend_stop_algo(
+                                p['swap_id'], p['sl_algo_id'], new_stop=round(p['stop_price'], 8)):
+                            p['sl_algo_px'] = round(p['stop_price'], 8)
                         _persist_state()
-                        notifier.notify_event('PARTIAL_TP', f"Partial TP <b>{p['coin']}</b> @ ${price:.4f}")
-                        _log(f"[{p['coin']}] Partial TP ✓ còn {p['contracts']} contracts")
+                        notifier.notify_event('PARTIAL_TP',
+                            f"Partial TP <b>{p['coin']}</b> @ ${price:.4f} · stop→BE ${p['stop_price']:.4f}")
+                        _log(f"[{p['coin']}] Partial TP ✓ còn {p['contracts']} contracts · stop→breakeven ${p['stop_price']:.4f}")
 
-            # Đóng những vị thế hit stop / EMA reverse
-            for p in [x for x in positions if x.get('_exit')]:
+            # Đóng những vị thế hit stop / EMA reverse (có backoff khi đóng fail → không storm API)
+            now_close = time.time()
+            for p in [x for x in positions if x.get('_exit') and now_close >= x.get('_close_fail_until', 0)]:
                 pnl_snap = p.get('_pnl') or {}
                 exit_px  = pnl_snap.get('price')
                 pct      = pnl_snap.get('pct', 0)
                 reason   = p.get('_exit_reason') or 'trail_stop'
-                label    = 'EMA reverse' if reason == 'ema_reverse' else 'Trailing stop'
+                label    = {'ema_reverse': 'EMA reverse', 'hard_stop': 'Hard stop (-6%)'}.get(reason, 'Trailing stop')
                 px_str   = f" @ ${exit_px:.4f}" if exit_px else ''
                 _log(f"[{p['coin']}] {label} hit{px_str}")
                 notifier.notify_event('STOP_HIT', f"{label} <b>{p['coin']}</b>{px_str}  {pct:+.2f}%")
                 _close_one(p, reason=reason, exit_price=exit_px)
 
+            # Số dư đọc thưa hơn (REST) — không cần realtime như giá
+            if now - last_bal >= BAL_INT:
+                bal = get_available_usdt()      # ngoài lock: tránh giữ lock khi gọi mạng
+                with _lock:
+                    _state['usdt'] = bal
+                last_bal = now
             with _lock:
-                _state['usdt']        = get_available_usdt()
                 _state['last_update'] = datetime.now().strftime('%H:%M:%S')
             last_mon = now
 

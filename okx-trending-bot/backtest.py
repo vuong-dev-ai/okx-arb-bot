@@ -22,6 +22,7 @@ log = logging.getLogger(__name__)
 
 LEVERAGE_F   = 5.0
 CROSS_WINDOW = 3
+TAKER_FEE    = 0.0005   # 0.05% swap taker mỗi chiều — mô hình phí để backtest sát thực tế (trước đây bỏ qua phí → ROI ảo)
 
 
 # ════════════════════ DATA FETCH ════════════════════
@@ -109,14 +110,13 @@ def _eval_bar(df: pd.DataFrame, idx: int, adx_min: float = ADX_MIN) -> dict:
     vol_ok  = bool(last['vol'] > avg_vol) if avg_vol > 0 else True
 
     cross_up = cross_down = False
-    cross_age = None
     for i in range(min(CROSS_WINDOW, idx)):
         cur = df.iloc[idx - i]
         prv = df.iloc[idx - i - 1]
         if prv['ema_fast'] <= prv['ema_slow'] and cur['ema_fast'] > cur['ema_slow']:
-            cross_up = True; cross_age = i; break
+            cross_up = True; break
         if prv['ema_fast'] >= prv['ema_slow'] and cur['ema_fast'] < cur['ema_slow']:
-            cross_down = True; cross_age = i; break
+            cross_down = True; break
 
     ef = float(last['ema_fast'])
     es = float(last['ema_slow'])
@@ -217,8 +217,11 @@ def run(
     def _close(pos, exit_price, exit_ts_ms, reason):
         nonlocal balance, total_pnl
         qty = pos['notional'] / pos['entry_price']
-        pnl = (exit_price - pos['entry_price']) * qty if pos['side'] == 'LONG' \
-              else (pos['entry_price'] - exit_price) * qty
+        gross = (exit_price - pos['entry_price']) * qty if pos['side'] == 'LONG' \
+                else (pos['entry_price'] - exit_price) * qty
+        # Phí round-trip taker trên notional còn lại (entry-fee phần còn lại + exit-fee)
+        fee = (pos['notional'] + exit_price * qty) * TAKER_FEE
+        pnl = gross - fee
         roi = pnl / pos['notional'] * 100
         balance += pos['margin'] + pnl
         total_pnl += pnl
@@ -264,7 +267,9 @@ def run(
                 if not pos['tp_fired']:
                     tp_px = pos['entry_price'] + PARTIAL_TP_ATR_MULT * pos['entry_atr']
                     if h >= tp_px:
-                        half_pnl = (tp_px - pos['entry_price']) * (pos['notional'] / pos['entry_price']) * PARTIAL_TP_RATIO
+                        half_qty = (pos['notional'] / pos['entry_price']) * PARTIAL_TP_RATIO
+                        half_fee = (pos['notional'] * PARTIAL_TP_RATIO + tp_px * half_qty) * TAKER_FEE
+                        half_pnl = (tp_px - pos['entry_price']) * half_qty - half_fee
                         balance     += pos['margin'] * PARTIAL_TP_RATIO + half_pnl
                         total_pnl   += half_pnl
                         pos['notional'] *= (1 - PARTIAL_TP_RATIO)
@@ -280,7 +285,9 @@ def run(
                 if not pos['tp_fired']:
                     tp_px = pos['entry_price'] - PARTIAL_TP_ATR_MULT * pos['entry_atr']
                     if l <= tp_px:
-                        half_pnl = (pos['entry_price'] - tp_px) * (pos['notional'] / pos['entry_price']) * PARTIAL_TP_RATIO
+                        half_qty = (pos['notional'] / pos['entry_price']) * PARTIAL_TP_RATIO
+                        half_fee = (pos['notional'] * PARTIAL_TP_RATIO + tp_px * half_qty) * TAKER_FEE
+                        half_pnl = (pos['entry_price'] - tp_px) * half_qty - half_fee
                         balance     += pos['margin'] * PARTIAL_TP_RATIO + half_pnl
                         total_pnl   += half_pnl
                         pos['notional'] *= (1 - PARTIAL_TP_RATIO)
