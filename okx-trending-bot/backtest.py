@@ -14,14 +14,14 @@ from strategy import (
     SCAN_COINS, TIMEFRAME, ADX_MIN,
     STOP_ATR_MULT, TRAIL_ATR_MULT, RISK_PCT, MAX_POS_PCT, MIN_USDT,
     PARTIAL_TP_ATR_MULT, PARTIAL_TP_RATIO, ATR_PCT_MAX,
-    CORRELATED_GROUPS,
-    add_indicators, GAP_PCT_MIN, GAP_PCT_MAX,
+    CORRELATED_GROUPS, VOL_FACTOR, ADX_STRONG,
+    add_indicators, GAP_PCT_MIN, GAP_PCT_MAX, CROSS_WINDOW,
 )
 
 log = logging.getLogger(__name__)
 
 LEVERAGE_F   = 5.0
-CROSS_WINDOW = 3
+# CROSS_WINDOW import từ strategy (KHÔNG đặt cứng — tránh lệch backtest vs live khi đổi tham số)
 TAKER_FEE    = 0.0005   # 0.05% swap taker mỗi chiều — mô hình phí để backtest sát thực tế (trước đây bỏ qua phí → ROI ảo)
 
 
@@ -107,7 +107,7 @@ def _eval_bar(df: pd.DataFrame, idx: int, adx_min: float = ADX_MIN) -> dict:
                 'adx': float(last['adx'])}
 
     avg_vol = df['vol'].iloc[max(0, idx - 21):idx].mean()
-    vol_ok  = bool(last['vol'] > avg_vol) if avg_vol > 0 else True
+    vol_ok  = bool(last['vol'] > VOL_FACTOR * avg_vol) if avg_vol > 0 else True
 
     cross_up = cross_down = False
     for i in range(min(CROSS_WINDOW, idx)):
@@ -124,6 +124,7 @@ def _eval_bar(df: pd.DataFrame, idx: int, adx_min: float = ADX_MIN) -> dict:
     trend_dn = ef < es
     strong   = float(last['adx']) >= adx_min
     adx_rising = bool(last['adx'] > prev['adx'])
+    adx_ok_cont = bool(adx_rising or float(last['adx']) >= ADX_STRONG)
 
     gap_pct = (ef - es) / c * 100
     gap_ok_long  = GAP_PCT_MIN <=  gap_pct <= GAP_PCT_MAX
@@ -134,9 +135,9 @@ def _eval_bar(df: pd.DataFrame, idx: int, adx_min: float = ADX_MIN) -> dict:
         signal = 'LONG'
     elif cross_down and strong and vol_ok:
         signal = 'SHORT'
-    elif trend_up and strong and adx_rising and gap_ok_long and vol_ok:
+    elif trend_up and strong and adx_ok_cont and gap_ok_long and vol_ok:
         signal = 'LONG'
-    elif trend_dn and strong and adx_rising and gap_ok_short and vol_ok:
+    elif trend_dn and strong and adx_ok_cont and gap_ok_short and vol_ok:
         signal = 'SHORT'
 
     return {

@@ -21,7 +21,14 @@ for fname in ('.env', 'test.env'):
 API_KEY    = os.getenv("OKX_API_KEY", "").strip()
 SECRET_KEY = os.getenv("OKX_SECRET_KEY", "").strip()
 PASSPHRASE = os.getenv("OKX_PASSPHRASE", "").strip()
-SIMULATED  = os.getenv("OKX_SIMULATED", "false").lower() == "true"
+# ── Fail-safe: MẶC ĐỊNH DEMO; LIVE (tiền thật) phải opt-in TƯỜNG MINH ──
+# Bug cũ (audit critical): default "false" → .env thiếu/lỗi trên host mới = âm thầm trade tiền thật.
+_sim_raw  = os.getenv("OKX_SIMULATED", "true").strip().lower()
+SIMULATED = _sim_raw not in ("false", "0", "no", "live")
+# LIVE chỉ bật khi CÓ CẢ OKX_SIMULATED=false LẪN ALLOW_LIVE=I_UNDERSTAND
+if not SIMULATED and os.getenv("ALLOW_LIVE", "").strip() != "I_UNDERSTAND":
+    sys.stderr.write("⚠ OKX_SIMULATED=false nhưng thiếu ALLOW_LIVE=I_UNDERSTAND → ép DEMO cho an toàn\n")
+    SIMULATED = True
 
 # "1" = demo/testnet, "0" = live (tiền thật)
 FLAG = "1" if SIMULATED else "0"

@@ -1,4 +1,4 @@
-import os, sys, time, threading, json, traceback, logging
+import os, sys, time, threading, json, traceback, logging, hmac
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
 
@@ -21,7 +21,7 @@ except Exception:
     pass
 
 import openpyxl
-from flask import Flask, jsonify, render_template, Response, stream_with_context
+from flask import Flask, jsonify, render_template, Response, stream_with_context, request, abort
 
 from strategy import (
     get_funding_rates, get_available_usdt, get_funding_income,
@@ -54,6 +54,20 @@ def _get_spot_price(spot_id):
 
 app = Flask(__name__)
 
+# ── Bảo vệ endpoint đổi-trạng-thái (audit critical: /api/* POST không auth) ──
+# Mặc định bind 127.0.0.1 → vào qua SSH tunnel (request đến như loopback, tin cậy).
+# Nếu BIND_HOST=0.0.0.0 (public): mọi POST KHÔNG-loopback bắt buộc header X-Dash-Token == DASH_TOKEN.
+_DASH_TOKEN = os.getenv('DASH_TOKEN', '').strip()
+
+@app.before_request
+def _guard_mutations():
+    if request.method in ('POST', 'PUT', 'DELETE'):
+        if request.remote_addr in ('127.0.0.1', '::1'):
+            return
+        sent = request.headers.get('X-Dash-Token', '')
+        if not _DASH_TOKEN or not hmac.compare_digest(sent, _DASH_TOKEN):
+            abort(401)
+
 _lock  = threading.Lock()
 _state = {
     'running':       False,
@@ -66,7 +80,7 @@ _state = {
     'io_busy':       set(),   # job IO đang chạy (excel, push) — chống stacking
 }
 
-MAX_POS         = 3
+MAX_POS         = 4        # 3→4: nới thêm 1 slot vào lệnh (delta-neutral nên không thêm rủi ro hướng giá)
 SCAN_INT        = 300       # scan funding rate mỗi 5 phút
 MON_INT         = 2         # đọc giá WS + cập nhật PnL MỖI 2 GIÂY (realtime)
 BAL_INT         = 15        # đọc số dư REST mỗi 15s (tách khỏi MON 2s — đỡ đập API)
@@ -317,11 +331,13 @@ def _bot():
                         if fa is not None:
                             p['_funding_actual'] = fa
                         if ok:
-                            # Min-hold: chỉ thoát funding_flip khi đã thu đủ EXIT_MIN_SETTLEMENTS kỳ funding
-                            # (bù phí), HOẶC rate đã ÂM (đang phải TRẢ funding).
-                            # Tránh đóng n_payments=0 lỗ phí trắng (6/12 lệnh cũ lỗ kiểu này).
+                            # MIN-HOLD (bảo vệ chính chống lỗ phí trắng): KHÔNG đóng funding_flip
+                            # cho tới khi đã thu ≥ EXIT_MIN_SETTLEMENTS kỳ funding. Vị thế đã hedge
+                            # delta-neutral nên giữ tới settlement (kể cả funding âm tạm thời) vẫn
+                            # RẺ HƠN round-trip phí 0.30%. Chỉ price_stop (lệch hedge thật) đóng sớm.
+                            # Bỏ nhánh "rate<0 ở npay=0" cũ — chính nó gây các lệnh npay=0 lỗ phí.
                             n_paid = funding_payments_since(p['open_time'])
-                            if n_paid >= EXIT_MIN_SETTLEMENTS or (rate is not None and rate < 0):
+                            if n_paid >= EXIT_MIN_SETTLEMENTS:
                                 p['_exit']        = True
                                 p['_exit_reason'] = 'funding_flip'
                     # Ưu tiên giá WS (sub-second), fallback REST. Funding dùng số thật nếu có.
@@ -708,4 +724,4 @@ if __name__ == '__main__':
     print("  OKX Arb Bot — Web Dashboard")
     print("  Mở trình duyệt: http://localhost:5000")
     print("="*50 + "\n")
-    app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False, threaded=True)
+    app.run(host=os.getenv('BIND_HOST', '127.0.0.1'), port=5000, debug=False, use_reloader=False, threaded=True)

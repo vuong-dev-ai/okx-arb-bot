@@ -41,13 +41,16 @@ CANDLE_LIMIT    = 200      # lấy 200 nến để đủ cho EMA55 + ADX14
 EMA_FAST        = 21
 EMA_SLOW        = 55
 ADX_PERIOD      = 14
-ADX_MIN         = 20.0     # chỉ vào khi trend đủ mạnh
+ADX_MIN         = 15.0     # hạ 20→15 cho DỄ VÀO LỆNH hơn (lever chính: gate `strong` chặn CẢ cross lẫn continuation)
 ATR_PERIOD      = 14
 
-CROSS_WINDOW    = 3        # cho phép vào lệnh nếu EMA cross trong N nến gần nhất (12h cho 4H)
-GAP_PCT_MAX     = 2.0      # continuation entry chỉ khi gap EMA/giá ≤ 2% (chưa quá xa cross)
+CROSS_WINDOW    = 4        # nới 3→4: bắt cú cắt EMA trong 4 nến gần nhất (16h cho 4H) — vào lệnh dễ hơn
+GAP_PCT_MAX     = 6.0      # continuation entry khi gap EMA/giá ≤ 6% (nới 4→6: vào dễ hơn trong
+                          # trend kéo dài, vẫn loại move giãn quá xa >6% — rủi ro đảo chiều cao)
 GAP_PCT_MIN     = 0.05     # và ≥ 0.05% (đủ tách bạch, tránh sideway)
 ATR_PCT_MAX     = 8.0      # bỏ qua coin có ATR% > 8% — volatility quá cao, stop loss xa, rủi ro lớn
+VOL_FACTOR      = 0.5      # vol_ok khi vol > 0.5× trung bình (nới 1.0→0.5: code cũ ngầm dùng 1.0×; trend âm ỉ vol thấp vẫn vào được)
+ADX_STRONG      = 28.0     # continuation: ADX ≥ mức này coi như trend đã vững (hạ 35→28 — mở rộng nhánh continuation)
 
 STOP_ATR_MULT   = 2.0      # stop loss ban đầu
 TRAIL_ATR_MULT  = 2.5      # trailing stop sau khi giá đi thuận (hạ từ 3.0 → giữ lãi tốt hơn)
@@ -261,7 +264,7 @@ def evaluate(df: pd.DataFrame, adx_min=ADX_MIN, cross_window=CROSS_WINDOW) -> di
     last = df.iloc[-1]
     prev = df.iloc[-2]
     avg_vol = df['vol'].iloc[-21:-1].mean()
-    vol_ok  = bool(last['vol'] > avg_vol) if avg_vol > 0 else True
+    vol_ok  = bool(last['vol'] > VOL_FACTOR * avg_vol) if avg_vol > 0 else True
 
     # ── Cross window: tìm cú cắt EMA trong N nến gần nhất ──
     cross_up = cross_down = False
@@ -284,6 +287,9 @@ def evaluate(df: pd.DataFrame, adx_min=ADX_MIN, cross_window=CROSS_WINDOW) -> di
     strong   = float(last['adx']) >= adx_min
     # ADX rising = trend đang gia tăng (filter cho continuation)
     adx_rising = bool(last['adx'] > prev['adx'])
+    # Continuation OK khi ADX đang tăng HOẶC đã rất mạnh (≥ADX_STRONG) — trend vững thì không
+    # bắt buộc phải đang tăng (nhiều trend mạnh ADX cao đã plateau).
+    adx_ok_cont = bool(adx_rising or float(last['adx']) >= ADX_STRONG)
 
     gap_pct = (float(last['ema_fast']) - float(last['ema_slow'])) / float(last['close']) * 100
     gap_ok_long  = GAP_PCT_MIN <=  gap_pct <= GAP_PCT_MAX
@@ -316,18 +322,18 @@ def evaluate(df: pd.DataFrame, adx_min=ADX_MIN, cross_window=CROSS_WINDOW) -> di
     elif cross_down and strong and vol_ok:
         snap['signal'] = 'SHORT'
         snap['reason'] = f'fresh_cross_down(age={cross_age})+strong+vol'
-    elif trend_up and strong and adx_rising and gap_ok_long and vol_ok:
+    elif trend_up and strong and adx_ok_cont and gap_ok_long and vol_ok:
         snap['signal'] = 'LONG'
-        snap['reason'] = f'continuation_up(gap={gap_pct:.2f}%)+adx_rising'
-    elif trend_dn and strong and adx_rising and gap_ok_short and vol_ok:
+        snap['reason'] = f'continuation_up(gap={gap_pct:.2f}%,adx={float(last["adx"]):.0f})'
+    elif trend_dn and strong and adx_ok_cont and gap_ok_short and vol_ok:
         snap['signal'] = 'SHORT'
-        snap['reason'] = f'continuation_down(gap={gap_pct:.2f}%)+adx_rising'
+        snap['reason'] = f'continuation_down(gap={gap_pct:.2f}%,adx={float(last["adx"]):.0f})'
     else:
         snap['signal'] = None
         reasons = [f"trend={snap['trend']}", f"adx={snap['adx']:.1f}"]
         if not strong:    reasons.append('adx_yếu')
         if not vol_ok:    reasons.append('vol_thấp')
-        if not adx_rising: reasons.append('adx_giảm')
+        if not adx_ok_cont: reasons.append(f'adx_không_tăng&<{ADX_STRONG:.0f}')
         if trend_up and not gap_ok_long:
             reasons.append(f'gap={gap_pct:.2f}%_ngoài[{GAP_PCT_MIN},{GAP_PCT_MAX}]')
         if trend_dn and not gap_ok_short:

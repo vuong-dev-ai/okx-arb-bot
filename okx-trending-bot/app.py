@@ -5,7 +5,7 @@ Vòng lặp:
   - Mỗi 60s: refresh giá hiện tại của open positions → update trailing stop, exit nếu hit
   - Mỗi khi có nến mới đóng (theo TIMEFRAME): scan watchlist, tính signal, mở vị thế mới nếu đủ slot
 """
-import os, sys, time, threading, json, traceback, logging
+import os, sys, time, threading, json, traceback, logging, hmac
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
 
@@ -26,7 +26,7 @@ try:
 except Exception:
     pass
 
-from flask import Flask, jsonify, render_template, Response, stream_with_context, request
+from flask import Flask, jsonify, render_template, Response, stream_with_context, request, abort
 
 from strategy import (
     SCAN_COINS, TIMEFRAME, ADX_MIN, EMA_FAST, EMA_SLOW,
@@ -61,6 +61,20 @@ analytics.backfill_fees()  # cập nhật fee cho trade cũ trong DB
 
 app = Flask(__name__)
 
+# ── Bảo vệ endpoint đổi-trạng-thái (audit critical: /api/* POST không auth) ──
+# Mặc định bind 127.0.0.1 → vào qua SSH tunnel (request đến như loopback, tin cậy).
+# Nếu BIND_HOST=0.0.0.0 (public): mọi POST KHÔNG-loopback bắt buộc header X-Dash-Token == DASH_TOKEN.
+_DASH_TOKEN = os.getenv('DASH_TOKEN', '').strip()
+
+@app.before_request
+def _guard_mutations():
+    if request.method in ('POST', 'PUT', 'DELETE'):
+        if request.remote_addr in ('127.0.0.1', '::1'):
+            return
+        sent = request.headers.get('X-Dash-Token', '')
+        if not _DASH_TOKEN or not hmac.compare_digest(sent, _DASH_TOKEN):
+            abort(401)
+
 # ════════════════════ STATE ════════════════════
 _lock  = threading.Lock()
 _state = {
@@ -75,7 +89,7 @@ _state = {
     'io_busy':         set(),
 }
 
-MAX_POS       = 3
+MAX_POS       = 4               # 3→4: nới thêm 1 slot vào lệnh (cổng chặn chính sau khi hạ ADX_MIN)
 MON_INT       = 2               # đọc giá WS cache + check trailing stop MỖI 2 GIÂY
 BAL_INT       = 15              # đọc số dư REST mỗi 15s (tách khỏi MON 2s — đỡ đập API)
 
@@ -810,4 +824,4 @@ if __name__ == '__main__':
     print(f"  Timeframe: {TIMEFRAME} · EMA {EMA_FAST}/{EMA_SLOW} · ADX≥{ADX_MIN}")
     print("  Trình duyệt: http://localhost:5001")
     print("="*52 + "\n")
-    app.run(host='0.0.0.0', port=5001, debug=False, use_reloader=False, threaded=True)
+    app.run(host=os.getenv('BIND_HOST', '127.0.0.1'), port=5001, debug=False, use_reloader=False, threaded=True)

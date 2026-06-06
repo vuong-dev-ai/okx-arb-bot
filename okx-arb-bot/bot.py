@@ -29,7 +29,7 @@ SCAN_INT  = 300
 MON_INT   = 60
 PUSH_INT  = 300    # push GitHub Pages mỗi 5 phút
 EXCL_INT  = 8 * 3600
-MAX_POS   = 3
+MAX_POS   = 4   # 3→4: đồng bộ với app.py (nới slot vào lệnh)
 
 positions: list[dict] = []
 running = True

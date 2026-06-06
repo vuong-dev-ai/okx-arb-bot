@@ -55,7 +55,7 @@ SCAN_COINS = [
 # Trước đây MIN_FUNDING_RATE=0.01%/8h: cần ~30 kỳ funding (~10 ngày) mới hoà phí,
 # nhưng bot lại thoát sau vài giờ → lỗ phí 100%. Nâng ngưỡng để 1 lệnh kỳ vọng
 # thu đủ funding bù phí.
-MIN_FUNDING_RATE = 0.0015    # 0.15%/8h — sàn vào lệnh (≈3 kỳ funding > phí round-trip)
+MIN_FUNDING_RATE = 0.0012    # 0.12%/8h — hạ 0.15→0.12 cho DỄ VÀO LỆNH hơn (3 kỳ = 0.36% > phí 0.30%)
 POSITION_PCT     = 0.15      # 15% số dư mỗi vị thế (giảm từ 30% → hạ phí tuyệt đối)
 MIN_USDT         = 50.0      # bỏ qua lệnh quá nhỏ (phí cố định lấn át funding)
 LEVERAGE         = "5"
@@ -63,9 +63,10 @@ LEVERAGE         = "5"
 SPOT_FEE_RATE    = 0.001    # 0.10% taker — spot
 FUTURES_FEE_RATE = 0.0005   # 0.05% taker — futures
 ROUND_TRIP_FEE   = (SPOT_FEE_RATE + FUTURES_FEE_RATE) * 2   # 0.30% — mở+đóng cả 2 chân
-FEE_SAFETY       = 1.5      # biên an toàn: funding kỳ vọng phải vượt phí FEE_SAFETY lần
+FEE_SAFETY       = 1.2      # biên an toàn (hạ 1.5→1.2: EV gate giờ cần coll ≥ 0.12%/8h, khớp MIN_FUNDING_RATE)
 ENTRY_MIN_SETTLEMENTS = 3   # số kỳ funding kỳ vọng giữ — dùng cho cổng EV vào lệnh
-EXIT_MIN_SETTLEMENTS  = 2   # KHÔNG thoát funding_flip trước khi thu đủ N kỳ funding
+EXIT_MIN_SETTLEMENTS  = 1   # MIN-HOLD: KHÔNG thoát funding_flip trước khi thu ≥1 kỳ funding
+                            # (hạ 2→1: vào nhanh/xoay vòng dễ hơn mà vẫn chặn lỗ phí npay=0)
 MIN_STAY_RATE    = 0.00005  # 0.005%/8h — rate thấp hơn mức này coi như "flip"
 PRICE_STOP_PCT   = 0.05     # thoát khi price_pnl < -5% notional (nới: vị thế đã hedge nên 2% là nhiễu basis)
 
@@ -107,22 +108,21 @@ def get_funding_rates():
 
 
 def collectible_rate(opp) -> float:
-    """Rate kỳ vọng THỰC THU ở (các) settlement sắp tới.
+    """Rate kỳ vọng THỰC THU ở settlement sắp tới — dùng cho cổng EV vào lệnh.
 
-    Lý do: `funding_rate` của OKX là rate VỪA TRẢ ở kỳ trước (nhìn lại quá khứ),
-    còn cái ta sẽ nhận là `nextFundingRate` (dự báo kỳ kế). Vào lệnh theo spike rate
-    hiện tại đã gây loạt lệnh npay=0 lỗ phí trắng (NEAR 1.5%→-6$, OP 1.5%→-4$ trong 6 phút):
-    rate hiện tại cao nhưng next≈0 nên thực thu = 0.
-
-    Trả về rate dùng cho cổng EV vào lệnh:
-      - Có cả next & current dương → lấy min (thận trọng, phải cùng xác nhận).
-      - Chỉ current dương, next≈0 → coi như 0 (KHÔNG vào — chính là spike đảo chiều).
+    `nextFundingRate` (dự báo kỳ kế) là predictor tốt nhất KHI sàn có trả về.
+    Nhưng OKX DEMO (và đôi lúc cả live ngay sau settlement) trả next=0 cho MỌI coin
+    → nếu gate cứng theo next sẽ KHÔNG BAO GIỜ vào lệnh, kể cả cơ hội thật như
+    ATOM 0.68%/8h (745% APY). Vì vậy:
+      - next > 0 (sàn CÓ dự báo): tin next, cap ở current để thận trọng (lọc spike live).
+      - next = 0 / không có: fallback CURRENT rate. Bảo vệ chống spike-revert chuyển sang
+        MIN-HOLD (giữ tới khi thu ≥1 kỳ funding, chỉ price_stop mới đóng sớm) — xem app.py.
     """
     nr  = opp.get('next_rate') or 0.0
     cur = opp.get('funding_rate') or 0.0
-    if nr > 0 and cur > 0:
-        return min(nr, cur)
-    return max(0.0, nr)
+    if nr > 0:
+        return min(nr, cur) if cur > 0 else nr
+    return max(0.0, cur)
 
 
 def get_available_usdt():

@@ -32,12 +32,13 @@
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html,body{background:var(--bg);color:var(--ink-2);font-family:'Inter',sans-serif;font-weight:300;font-size:13px;-webkit-font-smoothing:antialiased;min-height:100vh;letter-spacing:.01em}
+body{overflow-x:hidden}
 ::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--hr-hi)}
 
 /* ── HEADER ── */
 .header{position:sticky;top:0;z-index:50;background:var(--bg);border-bottom:.5px solid var(--hr);padding:0 48px;display:flex;align-items:stretch;height:64px}
 .h-brand{display:flex;align-items:center;gap:20px;padding-right:40px;border-right:.5px solid var(--hr);margin-right:40px}
-.h-logotype{font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:400;letter-spacing:.18em;color:var(--ink-1);text-transform:uppercase;white-space:nowrap}
+.h-logotype{font-family:'Cormorant Garamond',serif;font-size:clamp(15px,3.2vw,20px);font-weight:400;letter-spacing:.18em;color:var(--ink-1);text-transform:uppercase;white-space:nowrap}
 .h-logotype em{font-style:italic;color:var(--gold)}
 .h-sub{font-size:9px;letter-spacing:.25em;text-transform:uppercase;color:var(--ink-3);padding-top:1px}
 .h-center{flex:1;display:flex;align-items:center;gap:24px;padding:0 16px}
@@ -71,7 +72,7 @@ html,body{background:var(--bg);color:var(--ink-2);font-family:'Inter',sans-serif
 .stat{padding:36px 36px 30px;border-right:.5px solid var(--hr);position:relative}
 .stat:last-child{border-right:none}
 .stat-label{font-size:9px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-3);margin-bottom:12px}
-.stat-value{font-family:'Cormorant Garamond',serif;font-size:44px;font-weight:300;line-height:1;color:var(--ink-1);letter-spacing:-.02em;font-variant-numeric:tabular-nums;min-height:48px}
+.stat-value{font-family:'Cormorant Garamond',serif;font-size:clamp(22px,6vw,46px);font-weight:300;line-height:1;color:var(--ink-1);letter-spacing:-.02em;font-variant-numeric:tabular-nums;min-height:48px}
 .stat-sub{font-size:10px;color:var(--ink-3);margin-top:8px;letter-spacing:.04em}
 .stat-spark{margin-top:12px;height:36px;position:relative}
 .stat-spark canvas{position:absolute;inset:0;width:100%;height:100%}
@@ -97,7 +98,7 @@ html,body{background:var(--bg);color:var(--ink-2);font-family:'Inter',sans-serif
 
 /* ── TABLES ── */
 .tbl{width:100%;border-collapse:collapse}
-.tbl th{font-size:8.5px;letter-spacing:.18em;text-transform:uppercase;font-weight:400;color:var(--ink-3);padding:12px 16px;border-bottom:.5px solid var(--hr);text-align:left;background:var(--s1)}
+.tbl th{font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;font-weight:400;color:var(--ink-3);padding:12px 16px;border-bottom:.5px solid var(--hr);text-align:left;background:var(--s1)}
 .tbl th.r{text-align:right}
 .tbl td{padding:13px 16px;border-bottom:.5px solid rgba(255,255,255,.04);font-size:12px;color:var(--ink-2);vertical-align:middle}
 .tbl td.r{text-align:right}
@@ -135,7 +136,7 @@ html,body{background:var(--bg);color:var(--ink-2);font-family:'Inter',sans-serif
 .kpi{padding:28px 24px 24px;border-right:.5px solid var(--hr)}
 .kpi:last-child{border-right:none}
 .kpi-l{font-size:8.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3);margin-bottom:10px}
-.kpi-v{font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:300;color:var(--ink-1);letter-spacing:-.01em}
+.kpi-v{font-family:'Cormorant Garamond',serif;font-size:clamp(17px,4.5vw,28px);font-weight:300;color:var(--ink-1);letter-spacing:-.01em}
 
 /* ── RECO ── */
 .reco-box{padding:24px 32px;border-bottom:.5px solid var(--hr);font-size:12.5px;color:var(--ink-2);line-height:1.7}
