@@ -1,3 +1,4 @@
+import os
 import math
 import time
 import logging
@@ -48,6 +49,9 @@ SCAN_COINS = [
     "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX",
     "DOT", "LINK", "ARB", "OP", "SUI", "TRX", "ATOM",
     "LTC", "BCH", "NEAR", "TON", "PEPE", "FLOKI",
+    # Mở rộng watchlist (đều có CẢ spot lẫn swap trên OKX) — nhiều coin hơn ⇒ nhiều
+    # cơ hội funding ≥ ngưỡng EV ⇒ lấp đủ MAX_POS=10 và tiến gần 20 lệnh/ngày khi funding rộng.
+    "APT", "INJ", "TIA", "SEI", "WLD", "FIL", "AAVE", "LDO",
 ]
 
 # ── Ngưỡng vào/ra (đã chỉnh để KHÔNG churn lỗ phí) ──────────────────
@@ -55,30 +59,42 @@ SCAN_COINS = [
 # Trước đây MIN_FUNDING_RATE=0.01%/8h: cần ~30 kỳ funding (~10 ngày) mới hoà phí,
 # nhưng bot lại thoát sau vài giờ → lỗ phí 100%. Nâng ngưỡng để 1 lệnh kỳ vọng
 # thu đủ funding bù phí.
-MIN_FUNDING_RATE = 0.0012    # 0.12%/8h — hạ 0.15→0.12 cho DỄ VÀO LỆNH hơn (3 kỳ = 0.36% > phí 0.30%)
-POSITION_PCT     = 0.15      # 15% số dư mỗi vị thế (giảm từ 30% → hạ phí tuyệt đối)
+MIN_FUNDING_RATE = 0.0012    # 0.12%/8h — sàn EV: 3 kỳ = 0.36% > phí 0.30% (GIỮ — đây là đáy EV, hạ nữa = bleed phí)
+POSITION_PCT     = 0.07      # 7% số dư/vị thế (hạ 15→7): chứa được ~10 slot mà tổng vốn triển khai
+                            # vẫn < số dư (mỗi vị thế tiêu ~1.2× amount = spot full + swap margin/5)
 MIN_USDT         = 50.0      # bỏ qua lệnh quá nhỏ (phí cố định lấn át funding)
 LEVERAGE         = "5"
+
+# ── Vốn dành cho ARB khi DÙNG CHUNG tài khoản với trend-bot ──
+# get_available_usdt() trả số dư GỘP của cả tài khoản. Để 2 bot không cùng tưởng
+# mình sở hữu 100% vốn (→ over-leverage), mỗi bot chỉ được triển khai tối đa
+# CAPITAL_FRACTION × equity. arb + trend nên cộng lại ≤ 1.0 (vd 0.5 + 0.5).
+CAPITAL_FRACTION = float(os.getenv('ARB_CAPITAL_FRACTION', '0.5'))
+# Mỗi vị thế arb "tiêu" ≈ notional × (1 + 1/leverage): spot full + swap margin.
+CAPITAL_PER_NOTIONAL = 1.0 + 1.0 / float(LEVERAGE)
 
 SPOT_FEE_RATE    = 0.001    # 0.10% taker — spot
 FUTURES_FEE_RATE = 0.0005   # 0.05% taker — futures
 ROUND_TRIP_FEE   = (SPOT_FEE_RATE + FUTURES_FEE_RATE) * 2   # 0.30% — mở+đóng cả 2 chân
 FEE_SAFETY       = 1.2      # biên an toàn (hạ 1.5→1.2: EV gate giờ cần coll ≥ 0.12%/8h, khớp MIN_FUNDING_RATE)
 ENTRY_MIN_SETTLEMENTS = 3   # số kỳ funding kỳ vọng giữ — dùng cho cổng EV vào lệnh
-EXIT_MIN_SETTLEMENTS  = 1   # MIN-HOLD: KHÔNG thoát funding_flip trước khi thu ≥1 kỳ funding
-                            # (hạ 2→1: vào nhanh/xoay vòng dễ hơn mà vẫn chặn lỗ phí npay=0)
+EXIT_MIN_SETTLEMENTS  = 3   # HARD-CAP cho min-hold (1→3 — khớp ENTRY): exit funding_flip chỉ khi
+                            # funding ĐÃ THU đủ bù phí round-trip; nếu rate sụp ngay mà chưa bù phí thì
+                            # giữ tối đa 3 kỳ rồi thoát (chặn lỗ trên). Fix gốc bleed phí: trước đây vào
+                            # kỳ vọng 3 kỳ nhưng cho thoát sau 1 kỳ → thu 1×rate < phí 0.30% = lỗ mỗi lệnh.
 MIN_STAY_RATE    = 0.00005  # 0.005%/8h — rate thấp hơn mức này coi như "flip"
 PRICE_STOP_PCT   = 0.05     # thoát khi price_pnl < -5% notional (nới: vị thế đã hedge nên 2% là nhiễu basis)
 
 
 def adaptive_position_pct(funding_rate: float) -> float:
-    """Scale vốn theo funding rate — rate cao vào nhiều hơn (đã hạ trần để giảm phí)."""
+    """Scale vốn theo funding rate. Trần hạ để chứa ~10 slot đồng thời (MAX_POS=10) mà tổng
+    vốn triển khai vẫn < số dư — mỗi vị thế tiêu ~1.2× amount (spot full + swap margin/5)."""
     if funding_rate >= 0.005:     # >= 0.5%/8h — cơ hội rất tốt
-        return 0.20
-    elif funding_rate >= 0.002:   # >= 0.2%/8h
-        return POSITION_PCT       # 0.15
-    else:
         return 0.10
+    elif funding_rate >= 0.002:   # >= 0.2%/8h
+        return 0.08
+    else:
+        return POSITION_PCT       # 0.07
 
 
 def get_funding_rates():
@@ -224,18 +240,26 @@ def _fmt_contracts(contracts, lot_sz):
     return str(round(contracts, decimals))
 
 
-def _get_filled_qty(ord_id, inst_id, fallback=0.0):
-    """Query order vừa khớp → trả về (accFillSz, avgPx). Retry nhẹ vì OKX có thể chưa cập nhật ngay."""
-    for _ in range(3):
-        time.sleep(0.25)
+def _get_filled_qty(ord_id, inst_id, fallback=0.0, attempts=8, delay=0.5):
+    """Query order vừa khớp → trả về (accFillSz, avgPx).
+
+    Retry KỸ (mặc định 8×0.5s ≈ 4s) vì OKX settle ~1s và đây là số liệu nền tảng:
+    sai accFillSz khi MỞ → bán quá tay khi đóng → 51008 + lệch hedge. Thà chờ thêm
+    vài giây còn hơn dùng số ước lượng.
+    """
+    for _ in range(attempts):
+        time.sleep(delay)
         try:
             r = trade_api.get_order(instId=inst_id, ordId=ord_id)
             if r and r.get('code') == '0' and r.get('data'):
                 d = r['data'][0]
                 acc = float(d.get('accFillSz') or 0)
                 avg = float(d.get('avgPx') or 0)
+                state = d.get('state')
                 if acc > 0:
                     return acc, avg
+                if state in ('canceled', 'filled'):  # filled mà acc=0 thì khỏi đợi thêm
+                    break
         except Exception as e:
             log.debug(f"get_order {ord_id}: {e}")
     return fallback, 0.0
@@ -269,6 +293,13 @@ def open_position(opportunity, usdt_amount):
     spot_usdt  = round(contracts * ct_val * price / (1 - SPOT_FEE_RATE), 2)
     sz_str     = _fmt_contracts(contracts, lot_sz)
 
+    # Re-check số dư NGAY trước khi đặt lệnh (chống race chia chung tài khoản với trend-bot:
+    # số dư có thể đã bị bot kia tiêu trong lúc ta scan). Thiếu → bỏ lượt, KHÔNG để OKX reject giữa chừng.
+    avail_now = get_available_usdt()
+    if avail_now < spot_usdt * 1.02:
+        log.warning(f"  [{coin}] Bỏ qua — số dư ${avail_now:.2f} < cần ${spot_usdt*1.02:.2f} (đã trừ buffer/đối thủ chung TK)")
+        return None
+
     _set_leverage(swap_id)
 
     # Mua spot bằng USDT
@@ -282,14 +313,23 @@ def open_position(opportunity, usdt_amount):
         log.error(f"  [{coin}] Spot buy lỗi [{detail.get('sCode')}]: {detail.get('sMsg') or r_spot.get('msg')}")
         return None
 
-    # Lấy actual filled qty từ order — fix bug 51008 "insufficient spot balance"
-    # Lý do: mua tgtCcy=quote_ccy với fee 0.1% sẽ nhận về ÍT hơn estimate (usdt/price).
-    # Phải dùng accFillSz làm coin_amount để sell sau này không vượt balance.
+    # XÁC NHẬN lượng coin THỰC GIỮ — fix bug 51008 + lệch hedge.
+    # Nguồn sự thật theo thứ tự: (1) accFillSz từ order; (2) số dư available của coin sau settle.
+    # KHÔNG dùng ước lượng nữa: nếu partial-fill mà dùng estimate → bán quá tay → 51008 + unhedged.
     spot_ord_id = (r_spot.get('data') or [{}])[0].get('ordId', '')
-    estimate_amt = round(contracts * ct_val, 8)
-    actual_spot, actual_px = _get_filled_qty(spot_ord_id, spot_id, fallback=estimate_amt)
-    # Buffer thêm 0.05% (fee biến động theo VIP tier + slippage) để tránh sell vượt
-    coin_amount = round(actual_spot * 0.9995, 8) if actual_spot > 0 else estimate_amt
+    actual_spot, _actual_px = _get_filled_qty(spot_ord_id, spot_id, fallback=0.0)
+    time.sleep(0.4)  # cho spot settle vào balance trước khi đọc available
+    held = _get_spot_available(coin)
+    if held and held > 0:
+        coin_amount = round(held, 8)        # số dư thực = hedge khít nhất (đã trừ phí), sell cap theo available
+    elif actual_spot > 0:
+        coin_amount = round(actual_spot, 8)
+    else:
+        # Không xác nhận được spot đã khớp → KHÔNG mở chân short (tránh lệch hedge).
+        # Best-effort rollback bán lại phần có thể đã mua; nếu chưa khớp thì sell_spot tự bỏ qua.
+        log.error(f"  [{coin}] ⚠ Không xác nhận spot khớp sau khi mua — abort, KHÔNG short. Thử rollback spot...")
+        sell_spot(spot_id, round(contracts * ct_val, 8))
+        return None
 
     time.sleep(0.3)
 
@@ -370,14 +410,18 @@ def sell_spot(spot_id, amount):
     """
     ccy = spot_id.split('-')[0]
     avail = _get_spot_available(ccy)
-    if avail is not None and avail > 0:
-        # Co lại số lượng nếu balance thực < amount yêu cầu (chênh do fee/dust)
-        if avail < amount:
-            log.info(f"  [{ccy}] Spot avail={avail:.8f} < cần {amount:.8f} → bán {avail:.8f}")
-            amount = avail * 0.9995  # buffer 0.05% tránh float boundary
-    elif avail == 0:
+    if avail is None:
+        # API đọc số dư FAIL → KHÔNG bán mù (rủi ro bán quá tay → 51008, hoặc bán nhầm).
+        # Trả False để caller backoff & thử lại; giữ vị thế ở trạng thái cần dọn spot.
+        log.warning(f"  [{ccy}] Không đọc được số dư spot (API fail) — hoãn bán, thử lại sau")
+        return False
+    if avail <= 0:
         log.warning(f"  [{ccy}] Spot balance = 0, bỏ qua sell {spot_id}")
         return True  # không có gì để bán, coi như đã đóng
+    # Co lại số lượng nếu balance thực < amount yêu cầu (chênh do fee/dust)
+    if avail < amount:
+        log.info(f"  [{ccy}] Spot avail={avail:.8f} < cần {amount:.8f} → bán {avail:.8f}")
+        amount = avail * 0.9995  # buffer 0.05% tránh float boundary
 
     r = trade_api.place_order(
         instId=spot_id, tdMode="cash",

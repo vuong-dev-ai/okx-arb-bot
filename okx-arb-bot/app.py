@@ -31,7 +31,9 @@ from strategy import (
     MIN_FUNDING_RATE, MIN_USDT, PRICE_STOP_PCT,
     ROUND_TRIP_FEE, FEE_SAFETY, ENTRY_MIN_SETTLEMENTS, EXIT_MIN_SETTLEMENTS,
     adaptive_position_pct, SCAN_COINS,
+    CAPITAL_FRACTION, CAPITAL_PER_NOTIONAL,
 )
+from cross_bot_lock import account_lock
 from excel_logger import log_pnl_snapshot, export_json, push_to_github, EXCEL_FILE
 import analytics
 import notifier
@@ -80,13 +82,17 @@ _state = {
     'io_busy':       set(),   # job IO đang chạy (excel, push) — chống stacking
 }
 
-MAX_POS         = 4        # 3→4: nới thêm 1 slot vào lệnh (delta-neutral nên không thêm rủi ro hướng giá)
-SCAN_INT        = 300       # scan funding rate mỗi 5 phút
+MAX_POS         = 10       # 4→10: nhiều slot delta-neutral hơn để xoay vòng theo funding ⇒ tiến gần
+                           # 20 lệnh/ngày (3 settlement × rotate). Không thêm rủi ro HƯỚNG GIÁ (đã hedge),
+                           # chỉ dùng thêm margin — đã hạ POSITION_PCT 15→7% cho khớp.
+SCAN_INT        = 180       # scan funding rate mỗi 3 phút (300→180: lấp slot vừa giải phóng nhanh hơn)
 MON_INT         = 2         # đọc giá WS + cập nhật PnL MỖI 2 GIÂY (realtime)
 BAL_INT         = 15        # đọc số dư REST mỗi 15s (tách khỏi MON 2s — đỡ đập API)
 FUNDING_CHK_INT = 30        # check funding rate exit-condition mỗi 30s (rate đổi 8h/lần)
 TICK_LOG_INT    = 60        # ghi tick log vào DB mỗi 60s
-RECON_INT       = 150       # reconcile với OKX mỗi 2.5 phút
+RECON_INT       = 45        # reconcile với OKX mỗi 45s (150→45: phát hiện phantom & retry dọn
+                            # spot unhedged nhanh hơn — quan trọng khi chung TK với trend-bot)
+WAL_CKPT_INT    = 3600      # checkpoint WAL DB mỗi giờ (chống file .db-wal phình vô hạn)
 EXCL_INT        = 8*3600    # ghi Excel mỗi 8 giờ
 PUSH_INT        = 300       # push GitHub Pages mỗi 5 phút
 TICK            = 1         # vòng lặp chính 1s (UI cảm nhận realtime)
@@ -177,8 +183,25 @@ def _log(msg: str):
     except Exception: pass
 
 
+def _finalize_close(p, final_pnl, reason):
+    """Ghi sổ + xóa local + notify. CHỈ gọi khi đã xác nhận futures hết VÀ spot đã sạch."""
+    coin = p['coin']
+    p['_close_attempts'] = 0
+    p['_pending_spot_cleanup'] = False
+    analytics.record_close(p, final_pnl, reason=reason)
+    with _lock:
+        _state['positions'] = [x for x in _state['positions'] if x['coin'] != coin]
+    _persist_state()
+    pnl_val = (final_pnl or {}).get('net_pnl') or (final_pnl or {}).get('total_pnl') or 0
+    _log(f"[{coin}] Đóng ✓ ({reason})  net {pnl_val:+.2f}$")
+    ev = 'CLOSE_WIN' if pnl_val >= 0 else 'CLOSE_LOSS'
+    notifier.notify_event(ev, f"Đóng <b>{coin}</b> ({reason})  net {pnl_val:+.2f}$")
+
+
 def _close_one(p, reason):
-    """Đóng 1 vị thế + verify với OKX trước khi xóa local. Trả True nếu confirmed closed."""
+    """Đóng 1 vị thế arb. BẤT BIẾN AN TOÀN: chỉ xóa local khi futures ĐÃ hết VÀ spot
+    ĐÃ bán sạch. Nếu spot chưa bán được → GIỮ local + cờ _pending_spot_cleanup +
+    alert CRITICAL + retry (qua reconcile / monitor). KHÔNG để lại unhedged untracked."""
     coin = p['coin']
     if not _begin_close(coin):
         return False
@@ -193,7 +216,19 @@ def _close_one(p, reason):
             final_pnl = None
         final_pnl = final_pnl or p.get('_pnl')
 
-        # Thử đóng — lưu return value để xử lý edge case bên dưới
+        # ── Trường hợp futures ĐÃ đóng từ trước, chỉ còn dọn nốt spot ──
+        # (KHÔNG gọi close_position → tránh reduceOnly-buy lên futures đã hết = 51169 storm)
+        if p.get('_pending_spot_cleanup'):
+            if sell_spot(p['spot_id'], p['coin_amount']):
+                _finalize_close(p, final_pnl, reason)
+                return True
+            _arm_close_backoff(p)
+            notifier.notify_critical(
+                f"{coin}: futures đã đóng nhưng SPOT vẫn CHƯA bán được (UNHEDGED) — bot đang retry.",
+                key=f"unhedged-{coin}")
+            return False
+
+        # ── Đóng bình thường: futures + spot ──
         try:
             close_ok = close_position(p)
         except Exception as e:
@@ -204,32 +239,27 @@ def _close_one(p, reason):
         time.sleep(1.0)  # cho exchange settle
         okx_pos = get_okx_swap_positions()
         if okx_pos is None:
-            # Không xác định được trạng thái OKX → lùi lịch, thử lại sau (KHÔNG đập API mỗi 2s)
             _log(f"[{coin}] ⚠ Không query được vị thế OKX khi đóng — backoff, thử lại sau")
             _arm_close_backoff(p)
             return False
         if coin in okx_pos:
-            # Futures CHƯA đóng được (reduceOnly fail / chưa settle) → backoff, thử lại sau
             _log(f"[{coin}] ⚠ Sau khi đóng, OKX vẫn còn futures — backoff, thử lại sau")
             _arm_close_backoff(p)
             return False
 
-        # Tới đây futures đã KHÔNG còn trên OKX (đã đóng hoặc đã mất). Bán nốt spot rồi xóa local.
-        # KHÔNG gọi lại close_position (sẽ reduceOnly-buy lên futures đã hết → 51169 storm như log 18:19).
-        if not close_ok:
-            if not sell_spot(p['spot_id'], p['coin_amount']):
-                _log(f"[{coin}] ⚠ Spot chưa bán hết — cần sweep thủ công, vẫn đóng local (futures đã hết)")
+        # Futures đã KHÔNG còn. BẮT BUỘC spot sạch trước khi xóa local.
+        # close_position trả True = spot cũng đã bán; nếu False thì thử bán riêng (KHÔNG gọi lại close_position).
+        spot_clean = bool(close_ok) or sell_spot(p['spot_id'], p['coin_amount'])
+        if not spot_clean:
+            p['_pending_spot_cleanup'] = True   # GIỮ local để retry, KHÔNG xóa
+            _arm_close_backoff(p)
+            _persist_state()
+            notifier.notify_critical(
+                f"{coin}: futures đã đóng nhưng SPOT CHƯA bán được → UNHEDGED. Bot sẽ tự retry bán spot.",
+                key=f"unhedged-{coin}")
+            return False
 
-        # Confirmed flat (futures gone)
-        p['_close_attempts'] = 0
-        analytics.record_close(p, final_pnl, reason=reason)
-        with _lock:
-            _state['positions'] = [x for x in _state['positions'] if x['coin'] != coin]
-        _persist_state()
-        pnl_val = (final_pnl or {}).get('net_pnl') or (final_pnl or {}).get('total_pnl') or 0
-        _log(f"[{coin}] Đóng ✓ ({reason})  net {pnl_val:+.2f}$")
-        ev = 'CLOSE_WIN' if pnl_val >= 0 else 'CLOSE_LOSS'
-        notifier.notify_event(ev, f"Đóng <b>{coin}</b> ({reason})  net {pnl_val:+.2f}$")
+        _finalize_close(p, final_pnl, reason)
         return True
     except Exception as e:
         _log(f"[{coin}] Lỗi đóng: {e}")
@@ -253,14 +283,18 @@ def _reconcile_remove(p):
             final_pnl = estimate_pnl(p, funding_override=fa) or {}
         except Exception:
             final_pnl = {}
-        # Futures đã đóng bên ngoài — bán nốt spot để giải phóng hedge
+        # Futures đã đóng bên ngoài — PHẢI bán nốt spot để hết unhedged.
+        # Nếu bán fail → GIỮ local + cờ pending + alert; reconcile lần sau retry (KHÔNG bỏ rơi spot).
         if not sell_spot(p['spot_id'], p['coin_amount']):
-            _log(f"[{coin}] ⚠ Bán spot thất bại sau reconcile — kiểm tra thủ công {p['spot_id']}")
-        analytics.record_close(p, final_pnl, reason='external_close')
-        with _lock:
-            _state['positions'] = [x for x in _state['positions'] if x['coin'] != coin]
-        _persist_state()
-        _log(f"[{coin}] ⚠ Reconciled — không còn trên OKX, đóng local (external_close)")
+            p['_pending_spot_cleanup'] = True
+            _arm_close_backoff(p)
+            _persist_state()
+            notifier.notify_critical(
+                f"{coin}: futures đóng bên ngoài nhưng SPOT chưa bán được (UNHEDGED) — bot sẽ retry.",
+                key=f"unhedged-{coin}")
+            return 0
+        _finalize_close(p, final_pnl, reason='external_close')
+        _log(f"[{coin}] ⚠ Reconciled — không còn trên OKX, đã đóng local + bán spot")
         return 1
     except Exception as e:
         _log(f"[{coin}] Lỗi reconcile: {e}")
@@ -285,7 +319,7 @@ def _reconcile_with_okx():
 
 def _bot():
     last_scan = last_mon = last_excel = last_push = last_recon = last_tick_log = last_fund_chk = 0
-    last_bal = 0
+    last_bal = last_ckpt = 0
     last_opps: list = []
     _my_thread = threading.current_thread()
 
@@ -322,47 +356,68 @@ def _bot():
             do_fund_chk  = (now - last_fund_chk) >= FUNDING_CHK_INT
             for p in positions:
                 try:
+                    # ── TÍNH TOÁN / NETWORK (NGOÀI lock — không giữ lock khi gọi mạng) ──
+                    cur_rate = None
+                    fa_val   = None
+                    exit_flag = False
+                    exit_reason = None
                     # Funding rate + funding THỰC NHẬN chỉ check thưa (rate đổi mỗi 8h)
                     if do_fund_chk:
-                        ok, rate       = check_exit_conditions(p)
-                        p['_cur_rate'] = rate
-                        # Funding thực tế từ OKX bills → ghi sổ trung thực (thay ước lượng)
+                        ok, cur_rate = check_exit_conditions(p)
                         fa = get_funding_income(p['swap_id'], p['open_time'])
                         if fa is not None:
-                            p['_funding_actual'] = fa
+                            fa_val = fa
                         if ok:
-                            # MIN-HOLD (bảo vệ chính chống lỗ phí trắng): KHÔNG đóng funding_flip
-                            # cho tới khi đã thu ≥ EXIT_MIN_SETTLEMENTS kỳ funding. Vị thế đã hedge
-                            # delta-neutral nên giữ tới settlement (kể cả funding âm tạm thời) vẫn
-                            # RẺ HƠN round-trip phí 0.30%. Chỉ price_stop (lệch hedge thật) đóng sớm.
-                            # Bỏ nhánh "rate<0 ở npay=0" cũ — chính nó gây các lệnh npay=0 lỗ phí.
-                            n_paid = funding_payments_since(p['open_time'])
-                            if n_paid >= EXIT_MIN_SETTLEMENTS:
-                                p['_exit']        = True
-                                p['_exit_reason'] = 'funding_flip'
-                    # Ưu tiên giá WS (sub-second), fallback REST. Funding dùng số thật nếu có.
+                            # EV-HONEST EXIT: chỉ thoát funding_flip khi funding ĐÃ THU đủ bù phí round-trip
+                            # → mọi lệnh đóng ra luôn net-dương về funding. Hard-cap EXIT_MIN_SETTLEMENTS kỳ.
+                            n_paid   = funding_payments_since(p['open_time'])
+                            notional = p['contracts'] * p['ct_val'] * p['entry_price']
+                            fee      = notional * ROUND_TRIP_FEE
+                            got      = fa_val if fa_val is not None else p.get('_funding_actual')
+                            if got is None:
+                                got = (p.get('_pnl') or {}).get('funding_pnl', 0) or 0
+                            if got >= fee or n_paid >= EXIT_MIN_SETTLEMENTS:
+                                exit_flag, exit_reason = True, 'funding_flip'
+                    # Giá WS (sub-second), fallback REST. Funding dùng số thật nếu có.
                     spot_price = _get_spot_price(p['spot_id'])
-                    p['_pnl']  = estimate_pnl(p, price=spot_price,
-                                              funding_override=p.get('_funding_actual'))
+                    fund_override = fa_val if fa_val is not None else p.get('_funding_actual')
+                    pnl = estimate_pnl(p, price=spot_price, funding_override=fund_override)
                     # Price stop — thoát nếu giá diverge quá PRICE_STOP_PCT
-                    if not p.get('_exit') and p.get('_pnl'):
+                    if not exit_flag and not p.get('_exit') and pnl:
                         notional = p['contracts'] * p['ct_val'] * p['entry_price']
-                        if p['_pnl'].get('price_pnl', 0) < -(notional * PRICE_STOP_PCT):
-                            p['_exit']        = True
-                            p['_exit_reason'] = 'price_stop'
-                            _log(f"[{p['coin']}] Price stop (-{PRICE_STOP_PCT*100:.0f}%) → đóng")
-                    if do_tick_log and p.get('_pnl'):
-                        analytics.record_tick(p, p['_pnl'], funding_rate=p.get('_cur_rate'))
+                        if pnl.get('price_pnl', 0) < -(notional * PRICE_STOP_PCT):
+                            exit_flag, exit_reason = True, 'price_stop'
+
+                    # ── ÁP MUTATION VÀO vị thế (TRONG lock — chống race với persist/SSE/close) ──
+                    with _lock:
+                        if cur_rate is not None:
+                            p['_cur_rate'] = cur_rate
+                        if fa_val is not None:
+                            p['_funding_actual'] = fa_val
+                        p['_pnl'] = pnl
+                        if exit_flag:
+                            p['_exit'] = True
+                            p['_exit_reason'] = exit_reason
+                    if exit_reason == 'price_stop':
+                        _log(f"[{p['coin']}] Price stop (-{PRICE_STOP_PCT*100:.0f}%) → đóng")
+                    if do_tick_log and pnl:
+                        analytics.record_tick(p, pnl, funding_rate=cur_rate)
                 except Exception as e:
                     _log(f"[{p['coin']}] Lỗi cập nhật: {e}")
             if do_tick_log: last_tick_log = now
             if do_fund_chk: last_fund_chk = now
 
             now_close = time.time()
-            for p in [x for x in positions if x.get('_exit') and now_close >= x.get('_close_fail_until', 0)]:
+            # Đóng các vị thế cần thoát + retry các vị thế đang kẹt dọn spot (unhedged) — đều tôn trọng backoff.
+            for p in [x for x in positions
+                      if (x.get('_exit') or x.get('_pending_spot_cleanup'))
+                      and now_close >= x.get('_close_fail_until', 0)]:
                 reason = p.get('_exit_reason') or 'funding_flip'
-                label  = 'Price stop' if reason == 'price_stop' else 'Funding rate thấp'
-                _log(f"[{p['coin']}] {label} → đóng vị thế...")
+                if p.get('_pending_spot_cleanup'):
+                    _log(f"[{p['coin']}] Retry dọn spot (unhedged)...")
+                else:
+                    label = 'Price stop' if reason == 'price_stop' else 'Funding rate thấp'
+                    _log(f"[{p['coin']}] {label} → đóng vị thế...")
                 _close_one(p, reason=reason)
 
             # Số dư đọc thưa hơn (REST) — không cần realtime như giá
@@ -406,46 +461,71 @@ def _bot():
                 if opps:
                     with _lock:
                         open_coins = {p['coin'] for p in _state['positions']}
+                    # Snapshot vị thế trên OKX để biết coin nào của bot KHÁC (tránh đụng khi chung TK).
+                    okx_now = get_okx_swap_positions() or {}
                     for opp in opps:
+                        coin = opp['coin']
                         with _lock:
                             n_pos = len(_state['positions'])
                             go    = _state['running']
+                            own   = {p['coin'] for p in _state['positions']}
                         if not go or n_pos >= MAX_POS:
                             break
-                        if opp['coin'] in open_coins:
+                        if coin in open_coins:
                             continue
                         if opp['funding_rate'] < MIN_FUNDING_RATE:
                             break
-                        # Cổng EV theo phí dựa trên funding DỰ BÁO thực thu ở kỳ kế (next_rate),
-                        # KHÔNG phải rate hiện tại (rate VỪA TRẢ ở kỳ trước — nhìn lại quá khứ).
-                        # Fix gốc loạt lệnh npay=0 ăn phí trắng: NEAR/OP vào @1.5% nhưng next≈0 → thực thu 0.
+                        # OWNERSHIP: coin đã có vị thế trên OKX nhưng KHÔNG thuộc bot này → của bot kia
+                        # (chung tài khoản). Mở thêm sẽ NET vào nhau → reduceOnly đóng nhầm. Bỏ qua.
+                        if coin in okx_now and coin not in own:
+                            _log(f"[{coin}] Bỏ qua — đã có vị thế OKX của bot khác (chung TK), tránh đụng")
+                            continue
+                        # Cổng EV theo funding DỰ BÁO thực thu kỳ kế (next_rate).
                         coll = collectible_rate(opp)
                         if coll * ENTRY_MIN_SETTLEMENTS < ROUND_TRIP_FEE * FEE_SAFETY:
-                            _log(f"[{opp['coin']}] Bỏ qua — EV thấp (thực thu {coll*100:.4f}%×{ENTRY_MIN_SETTLEMENTS}kỳ "
+                            _log(f"[{coin}] Bỏ qua — EV thấp (thực thu {coll*100:.4f}%×{ENTRY_MIN_SETTLEMENTS}kỳ "
                                  f"< phí {ROUND_TRIP_FEE*FEE_SAFETY*100:.3f}% · cur={opp['funding_rate']*100:.3f}% next={opp['next_rate']*100:.3f}%)")
                             continue
-                        # Bỏ qua coin có lịch sử rất xấu (score < -1.5)
                         if opp.get('hist_score', 0) < -1.5:
-                            _log(f"[{opp['coin']}] Bỏ qua — lịch sử kém (score={opp['hist_score']:.2f})")
+                            _log(f"[{coin}] Bỏ qua — lịch sử kém (score={opp['hist_score']:.2f})")
                             continue
-                        usdt   = get_available_usdt()
-                        amount = usdt * adaptive_position_pct(opp['funding_rate'])
-                        if amount < MIN_USDT:
-                            _log(f"Số dư thấp (${usdt:.2f}) — dừng scan")
-                            break
-                        hs = opp.get('hist_score', 0)
-                        hs_tag = f" · score {hs:+.2f}" if hs else ''
-                        _log(f"[{opp['coin']}] Vào lệnh ${amount:.2f} @ {opp['funding_rate']*100:.4f}%/8h{hs_tag}")
-                        pos = open_position(opp, amount)
+
+                        # ── MUTEX liên-bot: nối tiếp việc đặt lệnh để 2 bot không tranh margin/spot ──
+                        pos = None
+                        with account_lock('arb-open') as ok:
+                            if not ok:
+                                _log("Không lấy được khóa giao dịch (bot kia đang đặt lệnh) — dừng scan, thử lượt sau")
+                                break
+                            # Re-đọc số dư TRONG khóa cho tươi; tính ngân sách arb (capital fraction).
+                            available = get_available_usdt()
+                            with _lock:
+                                deployed = sum(x['contracts'] * x['ct_val'] * x['entry_price']
+                                               for x in _state['positions']) * CAPITAL_PER_NOTIONAL
+                            total_equity = available + deployed
+                            budget = total_equity * CAPITAL_FRACTION
+                            room   = budget - deployed
+                            max_notional = min(available, room) / CAPITAL_PER_NOTIONAL
+                            if max_notional < MIN_USDT:
+                                _log(f"Hết ngân sách arb (budget ${budget:.0f}, đã dùng ${deployed:.0f}/{CAPITAL_FRACTION*100:.0f}% TK) — dừng scan")
+                                break
+                            amount = min(total_equity * adaptive_position_pct(opp['funding_rate']), max_notional)
+                            if amount < MIN_USDT:
+                                break
+                            hs = opp.get('hist_score', 0)
+                            hs_tag = f" · score {hs:+.2f}" if hs else ''
+                            _log(f"[{coin}] Vào lệnh ${amount:.2f} @ {opp['funding_rate']*100:.4f}%/8h{hs_tag}")
+                            pos = open_position(opp, amount)
+                        # (đã nhả khóa) — ghi sổ + cập nhật state ngoài khóa
                         if pos:
                             analytics.record_open(pos)
                             with _lock:
                                 _state['positions'].append(pos)
                             _persist_state()
-                            open_coins.add(opp['coin'])
-                            _log(f"[{opp['coin']}] Mở ✓ giá=${pos['entry_price']:.2f}")
+                            open_coins.add(coin)
+                            okx_now[coin] = {'inst_id': pos['swap_id']}  # đánh dấu là của ta cho vòng sau
+                            _log(f"[{coin}] Mở ✓ giá=${pos['entry_price']:.2f}")
                             notifier.notify_event('OPEN_LONG',
-                                f"Mở <b>{opp['coin']}</b> ${amount:.0f} @ {opp['funding_rate']*100:.4f}%/8h")
+                                f"Mở <b>{coin}</b> ${amount:.0f} @ {opp['funding_rate']*100:.4f}%/8h")
                 else:
                     _log("Không lấy được funding rate")
             last_scan = now
@@ -478,6 +558,17 @@ def _bot():
             _offload('push', _do_push)
             last_push = now
 
+        # ── Checkpoint WAL DB mỗi giờ (chống .db-wal phình) ─────
+        if now - last_ckpt >= WAL_CKPT_INT:
+            try:
+                wal_sz = analytics.wal_checkpoint()
+                if wal_sz > 50_000_000:
+                    notifier.notify_critical(f"analytics.db-wal vẫn lớn ({wal_sz//1_000_000}MB) sau checkpoint — kiểm tra DB",
+                                             key='wal-bloat', dedup_sec=86400)
+            except Exception as e:
+                _log(f"WAL checkpoint lỗi: {e}")
+            last_ckpt = now
+
         time.sleep(TICK)
 
     # ── Đóng tất cả khi dừng (dùng race-guard) ──────────────────
@@ -491,21 +582,43 @@ def _bot():
 
 
 def _bot_safe():
-    """Wrapper: auto-restart tối đa 3 lần nếu _bot() crash."""
+    """Wrapper NEVER-DIE: tự restart KHÔNG giới hạn với exp backoff + alert CRITICAL mỗi lần
+    crash. Reset đếm nếu chạy ổn định > RESET_AFTER. Chỉ dừng khi user stop (running=False).
+
+    Fix gốc 'sau 3 crash bot chết im': trong 1 tháng không đụng tay, sự cố mạng/OKX có thể
+    làm crash >3 lần — bot phải tự sống lại, không được bỏ cuộc."""
     _my_thread = threading.current_thread()
-    MAX_RETRIES = 3
-    for attempt in range(1, MAX_RETRIES + 1):
+    RESET_AFTER = 300   # chạy ổn > 5 phút → coi là khỏe, reset backoff
+    attempt = 0
+    while True:
+        with _lock:
+            still = _state['running'] and _bot_thread is _my_thread
+        if not still:
+            break
+        start = time.time()
         try:
             _bot()
-            break
+            break   # _bot() return bình thường = user stop → thoát hẳn
         except Exception:
-            _log(f"━━━ BOT CRASH (lần {attempt}/{MAX_RETRIES}) ━━━")
-            for line in traceback.format_exc().splitlines():
+            ran = time.time() - start
+            if ran > RESET_AFTER:
+                attempt = 0
+            attempt += 1
+            tb = traceback.format_exc()
+            _log(f"━━━ BOT CRASH (lần {attempt}) ━━━")
+            for line in tb.splitlines():
                 _log(line)
-            notifier.notify_event('BOT_CRASH', f"Bot crash lần {attempt}/{MAX_RETRIES}")
-            if attempt < MAX_RETRIES:
-                _log("Tự restart sau 30s...")
-                time.sleep(30)
+            last_line = (tb.strip().splitlines() or ['?'])[-1]
+            notifier.notify_critical(
+                f"Bot ARB crash lần {attempt} — tự restart. Lỗi: {last_line[:200]}",
+                key='bot-crash', dedup_sec=120)
+            with _lock:
+                still = _state['running'] and _bot_thread is _my_thread
+            if not still:
+                break
+            delay = min(300, 30 * (2 ** min(attempt - 1, 4)))
+            _log(f"Tự restart sau {delay}s...")
+            time.sleep(delay)
     with _lock:
         if _bot_thread is _my_thread:
             _state['running'] = False
@@ -603,15 +716,22 @@ def api_stream():
     )
 
 
-@app.route('/api/start', methods=['POST'])
-def api_start():
+def _start_bot():
+    """Khởi động bot thread (idempotent). Trả True nếu vừa start, False nếu đang chạy."""
     global _bot_thread
     with _lock:
         if _state['running']:
-            return jsonify({'ok': False, 'msg': 'Bot đang chạy rồi'})
+            return False
         _state['running'] = True
     _bot_thread = threading.Thread(target=_bot_safe, daemon=True, name='bot-main')
     _bot_thread.start()
+    return True
+
+
+@app.route('/api/start', methods=['POST'])
+def api_start():
+    if not _start_bot():
+        return jsonify({'ok': False, 'msg': 'Bot đang chạy rồi'})
     return jsonify({'ok': True})
 
 
@@ -724,4 +844,9 @@ if __name__ == '__main__':
     print("  OKX Arb Bot — Web Dashboard")
     print("  Mở trình duyệt: http://localhost:5000")
     print("="*50 + "\n")
+    # AUTO_START_BOT=true → tự bật bot khi Flask khởi động (không cần curl /api/start).
+    # Giúp systemd Restart=always tự hồi phục hoàn toàn mà không phụ thuộc ExecStartPost.
+    if os.getenv('AUTO_START_BOT', '').strip().lower() in ('1', 'true', 'yes'):
+        if _start_bot():
+            print("  AUTO_START_BOT=true → bot đã tự khởi động")
     app.run(host=os.getenv('BIND_HOST', '127.0.0.1'), port=5000, debug=False, use_reloader=False, threaded=True)
