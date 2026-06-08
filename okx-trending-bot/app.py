@@ -36,7 +36,7 @@ from strategy import (
     get_candles, evaluate, get_available_usdt, get_last_price,
     calc_position_size, open_position, close_position, partial_close_position,
     update_pnl_and_stop, last_closed_candle_ts,
-    get_okx_swap_positions, get_trend_1d, is_correlated,
+    get_okx_swap_positions, get_instrument_state, is_correlated,
     get_htf_regime, get_btc_regime, regime_allows,
     place_stop_algo, amend_stop_algo, cancel_stop_algo, _fmt_sz,
 )
@@ -211,7 +211,27 @@ def _close_one(p, reason, exit_price=None):
             _arm_close_backoff(p)
             return False
         if coin in okx_pos:
-            _log(f"[{coin}] ⚠ Sau khi đóng, OKX vẫn còn vị thế — backoff, thử lại sau (stop thật vẫn còn bảo vệ)")
+            # Vị thế CHƯA đóng được. Phân biệt: market đóng/tạm dừng (vô vọng tới khi mở lại)
+            # vs lỗi tạm thời (settle lag / margin). KHÔNG bao giờ báo 'đã đóng' khi còn trên sàn.
+            state    = get_instrument_state(p['swap_id'])
+            attempts = p.get('_close_attempts', 0)
+            err      = p.get('_last_close_err')
+            if state and state != 'live':
+                _log(f"[{coin}] ⚠ Market '{state}' (không giao dịch) — KHÔNG đóng được, giữ vị thế + tự retry khi mở lại")
+                notifier.notify_critical(
+                    f"{coin}: KHÔNG đóng được vì instrument đang '{state}' (market đóng/tạm dừng). "
+                    f"Vị thế {p['side']} VẪN CÒN NGUYÊN trên sàn — bot tự retry khi market mở lại. "
+                    f"Cần đóng gấp thì xử lý thủ công trên OKX." + (f" Lý do sàn: {err}" if err else ""),
+                    key=f"market-closed-{coin}")
+            elif attempts >= 2:
+                _log(f"[{coin}] ⚠ Đóng {attempts+1} lần CHƯA khớp (market 'live') — vị thế vẫn còn, đang retry")
+                notifier.notify_critical(
+                    f"{coin}: lệnh đóng đã thử {attempts+1} lần nhưng vị thế {p['side']} VẪN còn trên sàn "
+                    f"(market 'live'). Bot tiếp tục retry — kiểm tra thủ công nếu kéo dài."
+                    + (f" Lý do sàn: {err}" if err else ""),
+                    key=f"close-stuck-{coin}")
+            else:
+                _log(f"[{coin}] ⚠ Sau khi đóng, OKX vẫn còn vị thế — backoff, thử lại sau (stop thật vẫn còn bảo vệ)")
             _arm_close_backoff(p)
             return False
 

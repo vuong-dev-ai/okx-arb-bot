@@ -35,7 +35,8 @@ SCAN_COINS = [
     "DOT", "LINK", "ARB", "OP", "SUI", "TRX", "ATOM",
     "LTC", "BCH", "NEAR", "TON",
     # Mở rộng để có đủ tín hiệu ≥5 lệnh/ngày trên khung 15m (đều là SWAP thanh khoản cao trên OKX)
-    "PEPE", "FLOKI", "APT", "INJ", "TIA", "SEI", "WLD", "FIL", "AAVE", "LDO",
+    # ⚠ DEMO: APT/TIA/SEI/WLD KHÔNG có SWAP trên paper-trading → đã bỏ (gây ws 60018 + scan phí REST). Thêm lại khi LIVE.
+    "PEPE", "FLOKI", "INJ", "FIL", "AAVE", "LDO",
 ]
 
 TIMEFRAME       = "1H"     # khung 1H: ~24 nến/ngày × 29 coin ⇒ ~5 lệnh/ngày, EV tốt hơn HẲN 15m.
@@ -221,6 +222,21 @@ def get_swap_info(inst_id):
     except Exception as e:
         log.error(f"Parse instrument {inst_id}: {e}")
     return None, None, None
+
+
+def get_instrument_state(inst_id):
+    """Trạng thái giao dịch của instrument trên OKX:
+      'live'      → giao dịch được (đặt lệnh market OK);
+      'suspend' / 'preopen' / 'expired' / 'settlement' → KHÔNG đặt được lệnh (market đóng/tạm dừng).
+    Trả None nếu API fail (caller KHÔNG được kết luận 'market đóng' khi không đọc được)."""
+    resp = _retry(lambda: public_api.get_instruments(instType="SWAP", instId=inst_id),
+                  attempts=3, base_delay=0.3, what=f'inst-state {inst_id}')
+    try:
+        if resp and resp.get('code') == '0' and resp.get('data'):
+            return resp['data'][0].get('state')
+    except Exception as e:
+        log.debug(f"Parse state {inst_id}: {e}")
+    return None
 
 
 def get_trend_1d(coin: str):
@@ -573,8 +589,11 @@ def close_position(position: dict) -> bool:
     )
     if r.get('code') != '0':
         d = (r.get('data') or [{}])[0]
-        log.error(f"[{position['coin']}] đóng lỗi [{d.get('sCode')}]: {d.get('sMsg') or r.get('msg')}")
+        err = f"[{d.get('sCode')}] {d.get('sMsg') or r.get('msg')}"
+        position['_last_close_err'] = err
+        log.error(f"[{position['coin']}] đóng lỗi {err}")
         return False
+    position['_last_close_err'] = None
     return True
 
 

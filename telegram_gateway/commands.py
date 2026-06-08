@@ -354,12 +354,19 @@ async def cmd_close(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not r:
         await update.message.reply_text(f"⚠ {bot.upper()} không phản hồi")
         return
-    icon = '✅' if r.get('ok') else '⚠'
-    msg = r.get('msg') or ('Đang đóng' if r.get('ok') else 'fail')
-    await update.message.reply_text(
-        f"{icon} <b>{bot.upper()}</b> close <code>{_esc(coin)}</code>: {_esc(msg)}",
-        parse_mode=ParseMode.HTML,
-    )
+    if r.get('ok'):
+        await update.message.reply_text(
+            f"⏳ <b>{bot.upper()}</b> đã NHẬN lệnh đóng <code>{_esc(coin)}</code> — đang xử lý nền.\n"
+            f"Sẽ báo lại khi đóng XONG (✅) hoặc khi KHÔNG đóng được (🚨, vd market đóng cửa).\n"
+            f"<i>Tin này KHÔNG có nghĩa đã đóng.</i>",
+            parse_mode=ParseMode.HTML,
+        )
+    else:
+        msg = r.get('msg') or 'fail'
+        await update.message.reply_text(
+            f"⚠ <b>{bot.upper()}</b> close <code>{_esc(coin)}</code>: {_esc(msg)}",
+            parse_mode=ParseMode.HTML,
+        )
 
 
 @auth
@@ -378,7 +385,9 @@ async def cmd_close_all(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     n = r.get('closed', 0)
     await update.message.reply_text(
-        f"✅ <b>{bot.upper()}</b> đang đóng {n} vị thế",
+        f"⏳ <b>{bot.upper()}</b> đã NHẬN lệnh đóng {n} vị thế — đang xử lý nền.\n"
+        f"Sẽ báo riêng từng coin khi đóng XONG (✅) hoặc khi KHÔNG đóng được (🚨, vd market đóng cửa).\n"
+        f"<i>Tin này KHÔNG có nghĩa đã đóng — kiểm tra /status để xác nhận.</i>",
         parse_mode=ParseMode.HTML,
     )
 

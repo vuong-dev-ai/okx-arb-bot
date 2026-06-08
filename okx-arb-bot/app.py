@@ -27,7 +27,7 @@ from strategy import (
     get_funding_rates, get_available_usdt, get_funding_income,
     open_position, close_position, sell_spot,
     check_exit_conditions, estimate_pnl, get_spot_price,
-    get_okx_swap_positions, funding_payments_since, collectible_rate,
+    get_okx_swap_positions, get_instrument_state, funding_payments_since, collectible_rate,
     MIN_FUNDING_RATE, MIN_USDT, PRICE_STOP_PCT,
     ROUND_TRIP_FEE, FEE_SAFETY, ENTRY_MIN_SETTLEMENTS, EXIT_MIN_SETTLEMENTS,
     adaptive_position_pct, SCAN_COINS,
@@ -243,7 +243,27 @@ def _close_one(p, reason):
             _arm_close_backoff(p)
             return False
         if coin in okx_pos:
-            _log(f"[{coin}] ⚠ Sau khi đóng, OKX vẫn còn futures — backoff, thử lại sau")
+            # Futures CHƯA đóng được. Phân biệt market đóng/tạm dừng vs lỗi tạm thời.
+            # KHÔNG bao giờ báo 'đã đóng' khi futures còn trên sàn.
+            state    = get_instrument_state(p['swap_id'])
+            attempts = p.get('_close_attempts', 0)
+            err      = p.get('_last_close_err')
+            if state and state != 'live':
+                _log(f"[{coin}] ⚠ Market '{state}' (không giao dịch) — KHÔNG đóng được futures, giữ + tự retry khi mở lại")
+                notifier.notify_critical(
+                    f"{coin}: KHÔNG đóng được futures vì instrument đang '{state}' (market đóng/tạm dừng). "
+                    f"Vị thế short VẪN CÒN trên sàn — bot tự retry khi market mở lại. "
+                    f"Cần đóng gấp thì xử lý thủ công trên OKX." + (f" Lý do sàn: {err}" if err else ""),
+                    key=f"market-closed-{coin}")
+            elif attempts >= 2:
+                _log(f"[{coin}] ⚠ Đóng futures {attempts+1} lần CHƯA khớp (market 'live') — vẫn còn, đang retry")
+                notifier.notify_critical(
+                    f"{coin}: lệnh đóng futures đã thử {attempts+1} lần nhưng VẪN còn trên sàn (market 'live'). "
+                    f"Bot tiếp tục retry — kiểm tra thủ công nếu kéo dài."
+                    + (f" Lý do sàn: {err}" if err else ""),
+                    key=f"close-stuck-{coin}")
+            else:
+                _log(f"[{coin}] ⚠ Sau khi đóng, OKX vẫn còn futures — backoff, thử lại sau")
             _arm_close_backoff(p)
             return False
 

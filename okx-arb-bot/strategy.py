@@ -51,7 +51,8 @@ SCAN_COINS = [
     "LTC", "BCH", "NEAR", "TON", "PEPE", "FLOKI",
     # Mở rộng watchlist (đều có CẢ spot lẫn swap trên OKX) — nhiều coin hơn ⇒ nhiều
     # cơ hội funding ≥ ngưỡng EV ⇒ lấp đủ MAX_POS=10 và tiến gần 20 lệnh/ngày khi funding rộng.
-    "APT", "INJ", "TIA", "SEI", "WLD", "FIL", "AAVE", "LDO",
+    # ⚠ DEMO: APT/TIA/SEI/WLD KHÔNG có SWAP trên paper-trading → đã bỏ (gây ws 60018 + scan phí REST). Thêm lại khi LIVE.
+    "INJ", "FIL", "AAVE", "LDO",
 ]
 
 # ── Ngưỡng vào/ra (đã chỉnh để KHÔNG churn lỗ phí) ──────────────────
@@ -227,6 +228,21 @@ def get_swap_info(inst_id):
     return None, None, None
 
 
+def get_instrument_state(inst_id):
+    """Trạng thái giao dịch của instrument trên OKX:
+      'live'      → giao dịch được (đặt lệnh market OK);
+      'suspend' / 'preopen' / 'expired' / 'settlement' → KHÔNG đặt được lệnh (market đóng/tạm dừng).
+    Trả None nếu API fail (caller KHÔNG được kết luận 'market đóng' khi không đọc được)."""
+    resp = _retry(lambda: public_api.get_instruments(instType="SWAP", instId=inst_id),
+                  attempts=3, base_delay=0.3, what=f'inst-state {inst_id}')
+    try:
+        if resp and resp.get('code') == '0' and resp.get('data'):
+            return resp['data'][0].get('state')
+    except Exception as e:
+        log.debug(f"Parse state {inst_id}: {e}")
+    return None
+
+
 def _set_leverage(swap_id):
     try:
         account_api.set_leverage(instId=swap_id, lever=LEVERAGE, mgnMode="isolated")
@@ -377,8 +393,11 @@ def close_position(position):
     )
     if r_swap.get('code') != '0':
         detail = (r_swap.get('data') or [{}])[0]
-        log.error(f"  [{coin}] Đóng futures lỗi [{detail.get('sCode')}]: {detail.get('sMsg') or r_swap.get('msg')}")
+        err = f"[{detail.get('sCode')}] {detail.get('sMsg') or r_swap.get('msg')}"
+        position['_last_close_err'] = err
+        log.error(f"  [{coin}] Đóng futures lỗi {err}")
         return False
+    position['_last_close_err'] = None
 
     time.sleep(0.3)
     spot_ok = sell_spot(position['spot_id'], position['coin_amount'])
@@ -483,4 +502,4 @@ def estimate_pnl(position, price=None, funding_override=None):
         'net_pnl':        funding_pnl + net_price_pnl - fee_est,
         'fee_est':        round(fee_est, 4),
         'n_payments':     n_payments,
-    }
+    }

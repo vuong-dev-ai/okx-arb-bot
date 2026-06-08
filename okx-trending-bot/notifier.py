@@ -15,6 +15,7 @@ Mỗi event có thể có (gif, sticker, dice). Ưu tiên: sticker > gif > dice 
 Nếu sticker/gif gửi fail, fallback xuống loại kế tiếp; cuối cùng luôn gửi text.
 """
 import os
+import html
 import json
 import logging
 import threading
@@ -213,7 +214,10 @@ def notify_critical(text: str, key: str = None, dedup_sec: int = CRIT_DEDUP_SEC)
                 return
             _crit_last[k] = now
     log.error(f"CRITICAL: {text}")          # luôn vào bot.log dù telegram tắt/fail
-    msg = f"🚨 <b>[{_BOT}] CRITICAL</b>\n{text}"
+    # parse_mode=HTML → PHẢI escape nội dung động (traceback exception hay chứa <, >, &
+    # vd "TypeError: '<' not supported..."); nếu không Telegram trả 400 can't-parse-entities
+    # và alert bị nuốt. Thẻ <b>…</b> bao ngoài là markup cố ý nên giữ nguyên.
+    msg = f"🚨 <b>[{html.escape(_BOT)}] CRITICAL</b>\n{html.escape(text)}"
     if not _TOKEN or not _CHAT:
         return
     def runner():
@@ -222,4 +226,10 @@ def notify_critical(text: str, key: str = None, dedup_sec: int = CRIT_DEDUP_SEC)
                 return
             _time.sleep(1.5 * (i + 1))
         log.error(f"CRITICAL telegram gửi FAIL sau 3 lần: {text}")
+        # Gửi fail HOÀN TOÀN → nhả dedup để lần crash/sự cố kế tiếp còn được thử lại,
+        # tránh trường hợp 1 lần fail (mạng chập lúc crash) khoá luôn alert trong dedup_sec.
+        if dedup_sec:
+            with _crit_lock:
+                if _crit_last.get(k) == now:
+                    _crit_last.pop(k, None)
     _spawn(runner)
