@@ -355,7 +355,7 @@ def open_position(opportunity, usdt_amount):
         'contracts':          contracts,
         'lot_sz':             lot_sz,
         'ct_val':             ct_val,
-        'entry_price':        actual_px or price,
+        'entry_price':        _actual_px or price,
         'entry_funding_rate': opportunity['funding_rate'],
         'open_time':          time.time(),
     }
@@ -483,4 +483,4 @@ def estimate_pnl(position, price=None, funding_override=None):
         'net_pnl':        funding_pnl + net_price_pnl - fee_est,
         'fee_est':        round(fee_est, 4),
         'n_payments':     n_payments,
-    }
+    }
