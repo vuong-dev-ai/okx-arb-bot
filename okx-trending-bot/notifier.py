@@ -186,3 +186,40 @@ def notify_event(event: str, text: str):
         _send_text(cap)
 
     _spawn(runner)
+
+
+# ════════════════════ CRITICAL ALERTS ════════════════════
+# Cảnh báo sự cố CẦN tay người (unhedged-spot, crash, WS chết, stop fail, phantom...).
+# Có RETRY (3 lần) vì alert critical không được phép rớt, và DEDUP để không spam khi
+# lỗi lặp mỗi tick.
+import time as _time
+
+_crit_lock = threading.Lock()
+_crit_last = {}            # key -> last_sent_ts
+CRIT_DEDUP_SEC = 600       # cùng 1 sự cố tối đa 1 alert / 10 phút
+
+
+def notify_critical(text: str, key: str = None, dedup_sec: int = CRIT_DEDUP_SEC):
+    """Gửi alert CRITICAL nổi bật (🚨) + retry + dedup theo `key`.
+
+    key      : nhãn dedup (cùng key trong dedup_sec giây chỉ gửi 1 lần). Mặc định = text.
+    dedup_sec: cửa sổ dedup. Đặt 0 để LUÔN gửi (vd alert tổng hợp định kỳ).
+    """
+    k = key or text
+    now = _time.time()
+    if dedup_sec:
+        with _crit_lock:
+            if now - _crit_last.get(k, 0) < dedup_sec:
+                return
+            _crit_last[k] = now
+    log.error(f"CRITICAL: {text}")          # luôn vào bot.log dù telegram tắt/fail
+    msg = f"🚨 <b>[{_BOT}] CRITICAL</b>\n{text}"
+    if not _TOKEN or not _CHAT:
+        return
+    def runner():
+        for i in range(3):
+            if _send_text(msg):
+                return
+            _time.sleep(1.5 * (i + 1))
+        log.error(f"CRITICAL telegram gửi FAIL sau 3 lần: {text}")
+    _spawn(runner)
