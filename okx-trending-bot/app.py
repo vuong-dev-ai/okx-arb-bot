@@ -31,14 +31,16 @@ from flask import Flask, jsonify, render_template, Response, stream_with_context
 from strategy import (
     SCAN_COINS, TIMEFRAME, ADX_MIN, EMA_FAST, EMA_SLOW,
     RISK_PCT, MIN_USDT, LEVERAGE,
-    PARTIAL_TP_ATR_MULT, ATR_PCT_MAX,
-    MAX_LOSS_PCT, ALGO_AMEND_MIN_MOVE,
+    PARTIAL_TP_ATR_MULT, ENABLE_PARTIAL_TP, ATR_PCT_MAX,
+    MAX_LOSS_PCT, ALGO_AMEND_MIN_MOVE, CAPITAL_FRACTION,
     get_candles, evaluate, get_available_usdt, get_last_price,
     calc_position_size, open_position, close_position, partial_close_position,
     update_pnl_and_stop, last_closed_candle_ts,
     get_okx_swap_positions, get_trend_1d, is_correlated,
-    amend_stop_algo, cancel_stop_algo,
+    get_htf_regime, get_btc_regime, regime_allows,
+    place_stop_algo, amend_stop_algo, cancel_stop_algo, _fmt_sz,
 )
+from cross_bot_lock import account_lock
 import analytics
 import notifier
 import backtest as bt
@@ -89,7 +91,9 @@ _state = {
     'io_busy':         set(),
 }
 
-MAX_POS       = 4               # 3→4: nới thêm 1 slot vào lệnh (cổng chặn chính sau khi hạ ADX_MIN)
+MAX_POS       = 5               # tối đa 5 vị thế đồng thời. Sau đại tu MTF+regime, tín hiệu ít & chất hơn;
+                                # rủi ro tối đa = 5 × RISK_PCT(0.75%) = 3.75% số dư (vừa phải) — filter
+                                # tương quan (mở rộng) + regime BTC cắt thêm cụm cùng beta.
 MON_INT       = 2               # đọc giá WS cache + check trailing stop MỖI 2 GIÂY
 BAL_INT       = 15              # đọc số dư REST mỗi 15s (tách khỏi MON 2s — đỡ đập API)
 
@@ -98,7 +102,11 @@ _bt_lock  = threading.Lock()
 _bt_state = {'status': 'idle', 'progress': None, 'result': None, 'error': None}
 TICK_LOG_INT  = 60              # ghi tick log vào DB mỗi 60s
 SCAN_TICK     = 60              # check candle close mỗi 60s
-RECON_INT     = 150             # reconcile với OKX mỗi 2.5 phút
+RECON_INT     = 45             # reconcile với OKX mỗi 45s (150→45: phát hiện stop/liquidation sớm,
+                               # quan trọng khi chung TK với arb-bot)
+WAL_CKPT_INT  = 3600           # checkpoint WAL DB mỗi giờ
+NO_PRICE_ALERT_TICKS = 30      # mất giá liên tiếp ngần này tick (×MON_INT=2s ⇒ 60s) → alert CRITICAL
+WS_DEAD_ALERT_SEC    = 300     # WS không nhận message > 5 phút → alert
 TICK          = 1               # vòng lặp chính 1s (UI cảm nhận realtime)
 MAX_LOG       = 300
 SSE_TTL       = 1800
@@ -277,7 +285,7 @@ def _reconcile_with_okx():
 
 def _bot():
     last_mon = last_scan = last_recon = last_tick_log = 0
-    last_bal = 0
+    last_bal = last_ckpt = 0
     _my_thread = threading.current_thread()
 
     _log("━━━ Bot Trend-Following khởi động ━━━")
@@ -294,21 +302,34 @@ def _bot():
         if n:
             _log(f"Reconcile: xóa {n} vị thế phantom (không còn trên OKX)")
 
-        # Watchdog khởi động lại: nếu giá đã VƯỢT stop của vị thế còn lại → đóng NGAY.
-        # Phòng trường hợp bot từng tắt lâu (như sự cố BNB -525$ giữ 4 ngày không ai cắt).
+        # Watchdog khởi động lại (fix gốc BNB -525$ giữ 4 ngày không stop):
+        #   1) giá đã VƯỢT stop → đóng NGAY;
+        #   2) thiếu native stop trên sàn (sl_algo_id=None) → ĐẶT LẠI để vị thế sống sót cả khi bot offline;
+        #      nếu đặt lại fail → alert CRITICAL (không để vị thế trần trụi).
         with _lock:
             restored_open = list(_state['positions'])
         for p in restored_open:
             try:
                 px = _get_price(p['swap_id']) or get_last_price(p['swap_id'])
                 stop_px = p.get('stop_price')
-                if not px or not stop_px:
-                    continue
-                beyond = ((p['side'] == 'LONG'  and px <= stop_px) or
-                          (p['side'] == 'SHORT' and px >= stop_px))
-                if beyond:
+                if px and stop_px and ((p['side'] == 'LONG'  and px <= stop_px) or
+                                       (p['side'] == 'SHORT' and px >= stop_px)):
                     _log(f"[{p['coin']}] ⚠ Khởi động lại: giá {px:.4f} đã vượt stop {stop_px:.4f} → đóng ngay")
                     _close_one(p, reason='stale_stop', exit_price=px)
+                    continue
+                if not p.get('sl_algo_id') and stop_px:
+                    sz_str = _fmt_sz(p['contracts'], p['lot_sz'])
+                    algo_id = place_stop_algo(p['swap_id'], p['side'], sz_str, round(stop_px, 8))
+                    if algo_id:
+                        with _lock:
+                            p['sl_algo_id'] = algo_id
+                            p['sl_algo_px'] = round(stop_px, 8)
+                        _persist_state()
+                        _log(f"[{p['coin']}] Khởi động lại: ĐẶT LẠI stop trên sàn ✓ @ ${stop_px:.4f}")
+                    else:
+                        notifier.notify_critical(
+                            f"{p['coin']}: vị thế khôi phục KHÔNG có stop trên sàn và đặt lại FAIL — rủi ro khi bot offline. Kiểm tra.",
+                            key=f"no-stop-{p['coin']}")
             except Exception as e:
                 _log(f"[{p['coin']}] watchdog lỗi: {e}")
 
@@ -331,26 +352,43 @@ def _bot():
                 try:
                     price = _get_price(p['swap_id'])
                     if not price:
-                        _log(f"[{p['coin']}] ⚠ Không lấy được giá (WS+REST cùng fail) — bỏ qua tick này")
+                        # Mất giá (WS+REST cùng fail). Native stop algo trên sàn VẪN bảo vệ vị thế,
+                        # nên KHÔNG force-close mù; chỉ đếm + alert nếu kéo dài (đặc biệt nếu thiếu stop).
+                        n_np = p.get('_no_price', 0) + 1
+                        with _lock:
+                            p['_no_price'] = n_np
+                        if n_np == NO_PRICE_ALERT_TICKS:
+                            has_stop = bool(p.get('sl_algo_id'))
+                            notifier.notify_critical(
+                                f"{p['coin']}: mất giá {n_np*MON_INT}s (WS+REST fail). "
+                                + ("Stop trên sàn vẫn bảo vệ." if has_stop else "⚠ KHÔNG có stop trên sàn — rủi ro cao!"),
+                                key=f"no-price-{p['coin']}")
                         continue
-                    pnl = update_pnl_and_stop(p, price)
-                    p['_pnl']  = pnl
-                    # Dời stop THẬT trên sàn theo trailing (chỉ khi đổi đủ lớn để không spam API)
-                    new_stop = pnl.get('stop')
-                    if p.get('sl_algo_id') and new_stop:
-                        prev = p.get('sl_algo_px') or p['entry_price']
-                        if prev and abs(new_stop - prev) / prev >= ALGO_AMEND_MIN_MOVE:
-                            if amend_stop_algo(p['swap_id'], p['sl_algo_id'], new_stop=round(new_stop, 8)):
+                    # ── Tính PnL + dời trailing (math thuần) DƯỚI lock; network (amend) NGOÀI lock ──
+                    with _lock:
+                        if p.get('_no_price'):
+                            p['_no_price'] = 0
+                        pnl = update_pnl_and_stop(p, price)
+                        p['_pnl'] = pnl
+                        if pnl.get('hit_stop', False):
+                            p['_exit'] = True
+                            p['_exit_reason'] = 'trail_stop'
+                        elif pnl.get('pct', 0) <= -MAX_LOSS_PCT * 100:
+                            p['_exit'] = True
+                            p['_exit_reason'] = 'hard_stop'
+                        p['_max_fav'] = max(p.get('_max_fav') or 0, pnl['pct'])
+                        p['_max_adv'] = min(p.get('_max_adv') or 0, pnl['pct'])
+                        new_stop = pnl.get('stop')
+                        prev_sl  = p.get('sl_algo_px') or p['entry_price']
+                        algo_id  = p.get('sl_algo_id')
+                        swap_id  = p['swap_id']
+                        need_amend = bool(algo_id and new_stop and prev_sl
+                                          and abs(new_stop - prev_sl) / prev_sl >= ALGO_AMEND_MIN_MOVE)
+                    # Dời stop THẬT trên sàn (network) — ngoài lock; chỉ ghi lại sl_algo_px nếu OK
+                    if need_amend:
+                        if amend_stop_algo(swap_id, algo_id, new_stop=round(new_stop, 8)):
+                            with _lock:
                                 p['sl_algo_px'] = round(new_stop, 8)
-                    if pnl.get('hit_stop', False):
-                        p['_exit'] = True
-                        p['_exit_reason'] = 'trail_stop'
-                    elif pnl.get('pct', 0) <= -MAX_LOSS_PCT * 100:
-                        # Kill-switch cứng: lỗ vượt ngưỡng → đóng NGAY, không chờ nến/EMA reverse (fix vụ ATOM bleed -19%)
-                        p['_exit'] = True
-                        p['_exit_reason'] = 'hard_stop'
-                    p['_max_fav'] = max(p.get('_max_fav') or 0, pnl['pct'])
-                    p['_max_adv'] = min(p.get('_max_adv') or 0, pnl['pct'])
                     if do_tick_log:
                         analytics.record_tick(p, price, pnl.get('price_pnl', 0), pnl.get('pct', 0))
                 except Exception as e:
@@ -358,35 +396,40 @@ def _bot():
             if do_tick_log:
                 last_tick_log = now
 
-            # Partial TP — đóng 50% khi profit >= PARTIAL_TP_ATR_MULT × ATR
-            for p in positions:
-                if p.get('_tp_fired') or not p.get('_pnl'):
-                    continue
-                price = p['_pnl'].get('price')
-                if not price:
-                    continue
-                target = PARTIAL_TP_ATR_MULT * p['entry_atr']
-                hit = ((p['side'] == 'LONG'  and price >= p['entry_price'] + target) or
-                       (p['side'] == 'SHORT' and price <= p['entry_price'] - target))
-                if hit:
-                    _log(f"[{p['coin']}] Partial TP triggered @ ${price:.4f}")
-                    if partial_close_position(p):
-                        p['_tp_fired'] = True
-                        # Khóa BREAKEVEN cho phần còn lại: đã chốt 50% lãi tại 2×ATR nên cả lệnh
-                        # đã dương — kéo stop về entry để runner không thể quay lại thành lỗ.
-                        be = p['entry_price']
-                        if p['side'] == 'LONG':
-                            p['stop_price'] = max(p['stop_price'], be)
-                        else:
-                            p['stop_price'] = min(p['stop_price'], be)
-                        # Đồng bộ stop THẬT trên sàn (sống cả khi bot offline)
-                        if p.get('sl_algo_id') and amend_stop_algo(
-                                p['swap_id'], p['sl_algo_id'], new_stop=round(p['stop_price'], 8)):
-                            p['sl_algo_px'] = round(p['stop_price'], 8)
-                        _persist_state()
-                        notifier.notify_event('PARTIAL_TP',
-                            f"Partial TP <b>{p['coin']}</b> @ ${price:.4f} · stop→BE ${p['stop_price']:.4f}")
-                        _log(f"[{p['coin']}] Partial TP ✓ còn {p['contracts']} contracts · stop→breakeven ${p['stop_price']:.4f}")
+            # Partial TP — CHỈ khi ENABLE_PARTIAL_TP (mặc định tắt: cắt winner sớm = âm EV)
+            if ENABLE_PARTIAL_TP:
+                for p in positions:
+                    if p.get('_tp_fired') or not p.get('_pnl'):
+                        continue
+                    price = p['_pnl'].get('price')
+                    if not price:
+                        continue
+                    target = PARTIAL_TP_ATR_MULT * p['entry_atr']
+                    hit = ((p['side'] == 'LONG'  and price >= p['entry_price'] + target) or
+                           (p['side'] == 'SHORT' and price <= p['entry_price'] - target))
+                    if hit:
+                        _log(f"[{p['coin']}] Partial TP triggered @ ${price:.4f}")
+                        # partial_close có NETWORK (place_order + verify ~2-3s) → KHÔNG giữ lock (sẽ freeze bot).
+                        # Mutate contracts là single-writer (chỉ ở đây) + GIL-atomic cho monitor đang đọc → an toàn.
+                        ok_tp = partial_close_position(p)
+                        if ok_tp:
+                            be = p['entry_price']
+                            with _lock:
+                                p['_tp_fired'] = True
+                                if p['side'] == 'LONG':
+                                    p['stop_price'] = max(p['stop_price'], be)
+                                else:
+                                    p['stop_price'] = min(p['stop_price'], be)
+                                new_be  = round(p['stop_price'], 8)
+                                algo_id = p.get('sl_algo_id')
+                                swap_id = p['swap_id']
+                            if algo_id and amend_stop_algo(swap_id, algo_id, new_stop=new_be):
+                                with _lock:
+                                    p['sl_algo_px'] = new_be
+                            _persist_state()
+                            notifier.notify_event('PARTIAL_TP',
+                                f"Partial TP <b>{p['coin']}</b> @ ${price:.4f} · stop→BE ${p['stop_price']:.4f}")
+                            _log(f"[{p['coin']}] Partial TP ✓ còn {p['contracts']} contracts · stop→breakeven ${p['stop_price']:.4f}")
 
             # Đóng những vị thế hit stop / EMA reverse (có backoff khi đóng fail → không storm API)
             now_close = time.time()
@@ -407,6 +450,17 @@ def _bot():
                 with _lock:
                     _state['usdt'] = bal
                 last_bal = now
+            # WS chết kéo dài → alert (chỉ khi đang có vị thế, vì lúc đó cần giá realtime cho trailing)
+            try:
+                h = _ws.health()
+                age = h.get('last_msg_age')
+                if positions and age is not None and age > WS_DEAD_ALERT_SEC:
+                    notifier.notify_critical(
+                        f"WebSocket im lặng {int(age)}s (>{WS_DEAD_ALERT_SEC}s) trong khi đang có {len(positions)} vị thế. "
+                        f"Bot dùng REST fallback; stop trên sàn vẫn bảo vệ. Kiểm tra mạng nếu lặp lại.",
+                        key='ws-dead', dedup_sec=600)
+            except Exception:
+                pass
             with _lock:
                 _state['last_update'] = datetime.now().strftime('%H:%M:%S')
             last_mon = now
@@ -440,9 +494,14 @@ def _bot():
 
                 # Cache 1 lần / scan thay vì gọi mỗi coin
                 score_map = analytics.coin_score_map()
-                scan_usdt = get_available_usdt()
-                stats = {'sig': 0, 'skip_score': 0, 'skip_vốn': 0, 'skip_1d': 0,
+                stats = {'sig': 0, 'skip_score': 0, 'skip_vốn': 0, 'skip_regime': 0,
                          'skip_corr': 0, 'skip_full': 0, 'skip_atr': 0, 'opened': 0}
+                LEV = float(LEVERAGE)
+                # Regime thị trường (BTC 4H) tính 1 LẦN/scan — cổng risk-on/off cho toàn rổ alt.
+                btc_dir = get_btc_regime()
+                _log(f"Regime BTC (4H) = {btc_dir or '?'}")
+                # Snapshot vị thế OKX để biết coin nào của bot KHÁC (chung TK) — tránh đụng.
+                okx_now = get_okx_swap_positions() or {}
 
                 for coin in SCAN_COINS:
                     with _lock:
@@ -458,15 +517,18 @@ def _bot():
                     watch.append({'coin': coin, **snap})
                     analytics.record_signal(coin, snap)
 
-                    # EMA reverse exit — đóng vị thế nếu EMA cross ngược chiều
+                    # EMA reverse exit — mutate DƯỚI lock (chống race với monitor/close)
+                    rev = False
                     with _lock:
-                        open_pos = [p for p in _state['positions'] if p['coin'] == coin]
-                    for p in open_pos:
-                        if ((p['side'] == 'LONG'  and snap.get('cross_down')) or
-                                (p['side'] == 'SHORT' and snap.get('cross_up'))):
-                            p['_exit'] = True
-                            p['_exit_reason'] = 'ema_reverse'
-                            _log(f"[{coin}] EMA reverse ({p['side']}) → đóng vị thế")
+                        for p in _state['positions']:
+                            if p['coin'] == coin and (
+                                    (p['side'] == 'LONG'  and snap.get('cross_down')) or
+                                    (p['side'] == 'SHORT' and snap.get('cross_up'))):
+                                p['_exit'] = True
+                                p['_exit_reason'] = 'ema_reverse'
+                                rev = True
+                    if rev:
+                        _log(f"[{coin}] EMA reverse → đóng vị thế")
 
                     sig = snap.get('signal')
                     if not sig:
@@ -474,16 +536,21 @@ def _bot():
                     stats['sig'] += 1
 
                     if snap.get('atr_pct', 0) > ATR_PCT_MAX:
-                        _log(f"[{coin}] Bỏ qua {sig} — ATR%={snap['atr_pct']:.2f}% > {ATR_PCT_MAX}% (volatility quá cao)")
+                        _log(f"[{coin}] Bỏ qua {sig} — ATR%={snap['atr_pct']:.2f}% > {ATR_PCT_MAX}%")
                         stats['skip_atr'] += 1
                         continue
 
                     with _lock:
                         n_pos = len(_state['positions'])
+                        own   = {p['coin'] for p in _state['positions']}
                     if n_pos >= MAX_POS:
                         stats['skip_full'] += 1
                         continue
                     if coin in open_coins:
+                        continue
+                    # OWNERSHIP: coin đã có vị thế OKX không thuộc bot này (của arb-bot, chung TK) → bỏ
+                    if coin in okx_now and coin not in own:
+                        _log(f"[{coin}] Bỏ qua — đã có vị thế OKX của bot khác (chung TK)")
                         continue
 
                     hist_score = score_map.get(coin, 0)
@@ -492,17 +559,13 @@ def _bot():
                         stats['skip_score'] += 1
                         continue
 
-                    notional, margin = calc_position_size(scan_usdt, snap['close'], snap['atr'])
-                    if notional < MIN_USDT or margin < 1.0:
-                        _log(f"[{coin}] Bỏ qua {sig} — vốn ${notional:.2f} thấp (cần ≥${MIN_USDT})")
-                        stats['skip_vốn'] += 1
-                        continue
-
-                    trend_1d = get_trend_1d(coin)
-                    if trend_1d and ((sig == 'LONG'  and trend_1d == 'DOWN') or
-                                     (sig == 'SHORT' and trend_1d == 'UP')):
-                        _log(f"[{coin}] Bỏ qua {sig} — 1D trend ngược ({trend_1d})")
-                        stats['skip_1d'] += 1
+                    # ── CỔNG REGIME ĐA KHUNG (ĐẠI TU): 1H chỉ là timing; cần 4H trending cùng chiều
+                    #    + regime BTC không nghịch (loại chop & rủi ro tương quan) ──
+                    htf = get_htf_regime(coin)
+                    htf_dir = htf[0] if htf else None
+                    if not regime_allows(sig, htf_dir, btc_dir):
+                        _log(f"[{coin}] Bỏ qua {sig} — regime chưa thuận (4H={htf_dir or '?'}, BTC={btc_dir or '?'})")
+                        stats['skip_regime'] += 1
                         continue
 
                     with _lock:
@@ -512,18 +575,47 @@ def _bot():
                         stats['skip_corr'] += 1
                         continue
 
-                    hs_tag = f" · score {hist_score:+.2f}" if hist_score else ''
-                    _log(f"[{coin}] {sig} · {snap.get('reason','')} · ADX={snap['adx']:.1f} · ATR%={snap['atr_pct']:.2f}%{hs_tag} · 1D={trend_1d or '?'} → ${notional:.2f}")
-                    pos = open_position(coin, sig, notional, snap)
+                    # ── MUTEX liên-bot + capital fraction (chung TK với arb-bot) ──
+                    pos = None
+                    with account_lock('trend-open') as ok:
+                        if not ok:
+                            _log("Không lấy được khóa giao dịch (bot kia đang đặt lệnh) — bỏ coin này")
+                            continue
+                        available = get_available_usdt()
+                        with _lock:
+                            deployed_margin = sum((x.get('notional') or 0) / LEV for x in _state['positions'])
+                        total_equity = available + deployed_margin
+                        budget = total_equity * CAPITAL_FRACTION
+                        room   = budget - deployed_margin          # margin còn lại cho trend
+                        if room <= 1.0:
+                            _log(f"Hết ngân sách trend (budget ${budget:.0f}, đã dùng margin ${deployed_margin:.0f}/{CAPITAL_FRACTION*100:.0f}% TK)")
+                            break
+                        notional, margin = calc_position_size(budget, snap['close'], snap['atr'])
+                        # Cap theo margin còn lại của trend VÀ số dư khả dụng
+                        max_margin = min(room, available)
+                        if margin > max_margin:
+                            margin   = max_margin
+                            notional = margin * LEV
+                        if notional < MIN_USDT or margin < 1.0:
+                            _log(f"[{coin}] Bỏ qua {sig} — vốn ${notional:.2f} thấp (cần ≥${MIN_USDT})")
+                            stats['skip_vốn'] += 1
+                            continue
+                        hs_tag = f" · score {hist_score:+.2f}" if hist_score else ''
+                        _log(f"[{coin}] {sig} · {snap.get('reason','')} · ADX={snap['adx']:.1f} · 4H={htf_dir}/BTC={btc_dir}{hs_tag} → ${notional:.2f}")
+                        pos = open_position(coin, sig, notional, snap)
+                    # (đã nhả khóa)
                     if pos:
                         analytics.record_open(pos)
                         with _lock:
                             _state['positions'].append(pos)
                         _persist_state()
                         open_coins.add(coin)
+                        okx_now[coin] = {'inst_id': pos['swap_id']}
                         stats['opened'] += 1
-                        # Refresh balance vì đã trừ margin
-                        scan_usdt = get_available_usdt()
+                        if not pos.get('sl_algo_id'):
+                            notifier.notify_critical(
+                                f"{coin}: MỞ {sig} nhưng KHÔNG đặt được stop trên sàn — chỉ còn stop phần mềm. Theo dõi.",
+                                key=f"no-stop-{coin}")
                         _log(f"[{coin}] {sig} ✓ entry=${pos['entry_price']:.4f} stop=${pos['stop_price']:.4f}")
                         ev = 'OPEN_LONG' if sig == 'LONG' else 'OPEN_SHORT'
                         notifier.notify_event(ev,
@@ -534,13 +626,24 @@ def _bot():
                     _log(f"Scan xong — 0/{len(SCAN_COINS)} coin có signal (chờ cross hoặc trend đủ điều kiện)")
                 else:
                     _log(f"Scan xong — {stats['sig']} signal · mở {stats['opened']} · "
-                         f"skip [vốn={stats['skip_vốn']}, 1d={stats['skip_1d']}, "
+                         f"skip [vốn={stats['skip_vốn']}, regime={stats['skip_regime']}, "
                          f"atr={stats['skip_atr']}, score={stats['skip_score']}, corr={stats['skip_corr']}, full={stats['skip_full']}]")
 
                 with _lock:
                     _state['watchlist'] = watch
                     _state['last_candle_ts'] = cur_closed_ts
             last_scan = now
+
+        # ── Checkpoint WAL DB mỗi giờ (chống .db-wal phình) ─────
+        if now - last_ckpt >= WAL_CKPT_INT:
+            try:
+                wal_sz = analytics.wal_checkpoint()
+                if wal_sz > 50_000_000:
+                    notifier.notify_critical(f"analytics.db-wal vẫn lớn ({wal_sz//1_000_000}MB) sau checkpoint",
+                                             key='wal-bloat', dedup_sec=86400)
+            except Exception as e:
+                _log(f"WAL checkpoint lỗi: {e}")
+            last_ckpt = now
 
         time.sleep(TICK)
 
@@ -555,24 +658,42 @@ def _bot():
 
 
 def _bot_safe():
-    """Wrapper: auto-restart tối đa 3 lần nếu _bot() crash."""
+    """Wrapper NEVER-DIE: tự restart KHÔNG giới hạn với exp backoff + alert CRITICAL mỗi lần
+    crash. Reset đếm nếu chạy ổn định > RESET_AFTER. Chỉ dừng khi user stop (running=False).
+    Fix gốc 'sau 3 crash bot chết im' — 1 tháng không đụng tay thì bot phải tự sống lại."""
     _my_thread = threading.current_thread()
-    MAX_RETRIES = 3
-    for attempt in range(1, MAX_RETRIES + 1):
+    RESET_AFTER = 300
+    attempt = 0
+    while True:
+        with _lock:
+            still = _state['running'] and _bot_thread is _my_thread
+        if not still:
+            break
+        start = time.time()
         try:
             _bot()
-            break
+            break   # _bot() return bình thường = user stop
         except Exception:
-            _log(f"━━━ BOT CRASH (lần {attempt}/{MAX_RETRIES}) ━━━")
-            for line in traceback.format_exc().splitlines():
+            ran = time.time() - start
+            if ran > RESET_AFTER:
+                attempt = 0
+            attempt += 1
+            tb = traceback.format_exc()
+            _log(f"━━━ BOT CRASH (lần {attempt}) ━━━")
+            for line in tb.splitlines():
                 _log(line)
-            notifier.notify_event('BOT_CRASH', f"Bot crash lần {attempt}/{MAX_RETRIES}")
-            if attempt < MAX_RETRIES:
-                _log("Tự restart sau 30s...")
-                time.sleep(30)
+            last_line = (tb.strip().splitlines() or ['?'])[-1]
+            notifier.notify_critical(
+                f"Bot TREND crash lần {attempt} — tự restart. Lỗi: {last_line[:200]}",
+                key='bot-crash', dedup_sec=120)
+            with _lock:
+                still = _state['running'] and _bot_thread is _my_thread
+            if not still:
+                break
+            delay = min(300, 30 * (2 ** min(attempt - 1, 4)))
+            _log(f"Tự restart sau {delay}s...")
+            time.sleep(delay)
     with _lock:
-        # Chỉ reset state nếu đây vẫn là bot thread hiện hành
-        # (tránh ghi đè khi user stop → start lại nhanh)
         if _bot_thread is _my_thread:
             _state['running'] = False
         _state['closing'].clear()
@@ -677,15 +798,22 @@ def api_stream():
                              'X-Accel-Buffering': 'no', 'Connection': 'keep-alive'})
 
 
-@app.route('/api/start', methods=['POST'])
-def api_start():
+def _start_bot():
+    """Khởi động bot thread (idempotent). Trả True nếu vừa start, False nếu đang chạy."""
     global _bot_thread
     with _lock:
         if _state['running']:
-            return jsonify({'ok': False, 'msg': 'Bot đang chạy rồi'})
+            return False
         _state['running'] = True
     _bot_thread = threading.Thread(target=_bot_safe, daemon=True, name='bot-main')
     _bot_thread.start()
+    return True
+
+
+@app.route('/api/start', methods=['POST'])
+def api_start():
+    if not _start_bot():
+        return jsonify({'ok': False, 'msg': 'Bot đang chạy rồi'})
     return jsonify({'ok': True})
 
 
@@ -824,4 +952,8 @@ if __name__ == '__main__':
     print(f"  Timeframe: {TIMEFRAME} · EMA {EMA_FAST}/{EMA_SLOW} · ADX≥{ADX_MIN}")
     print("  Trình duyệt: http://localhost:5001")
     print("="*52 + "\n")
+    # AUTO_START_BOT=true → tự bật bot khi Flask khởi động (systemd Restart=always tự hồi phục hoàn toàn).
+    if os.getenv('AUTO_START_BOT', '').strip().lower() in ('1', 'true', 'yes'):
+        if _start_bot():
+            print("  AUTO_START_BOT=true → bot đã tự khởi động")
     app.run(host=os.getenv('BIND_HOST', '127.0.0.1'), port=5001, debug=False, use_reloader=False, threaded=True)

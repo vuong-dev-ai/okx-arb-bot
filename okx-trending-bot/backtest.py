@@ -9,13 +9,16 @@ import logging
 import pandas as pd
 from typing import Optional
 
+import bisect
 from config import market_api
 from strategy import (
     SCAN_COINS, TIMEFRAME, ADX_MIN,
     STOP_ATR_MULT, TRAIL_ATR_MULT, RISK_PCT, MAX_POS_PCT, MIN_USDT,
-    PARTIAL_TP_ATR_MULT, PARTIAL_TP_RATIO, ATR_PCT_MAX,
+    PARTIAL_TP_ATR_MULT, PARTIAL_TP_RATIO, ATR_PCT_MAX, ENABLE_PARTIAL_TP,
     CORRELATED_GROUPS, VOL_FACTOR, ADX_STRONG,
     add_indicators, GAP_PCT_MIN, GAP_PCT_MAX, CROSS_WINDOW,
+    HTF_TIMEFRAME, HTF_EMA_FAST, HTF_EMA_SLOW, HTF_ADX_MIN,
+    BTC_REGIME_COIN, regime_allows,
 )
 
 log = logging.getLogger(__name__)
@@ -83,6 +86,37 @@ def _fetch_history(inst_id: str, bar: str = '4H', target: int = 600) -> Optional
           .drop_duplicates('ts')
           .reset_index(drop=True))
     return df
+
+
+# ════════════════════ HTF REGIME (cho đại tu MTF) ════════════════════
+def _htf_regime_arrays(df, bar=HTF_TIMEFRAME):
+    """Từ df khung lớn (đã add_indicators) → (keys, dirs):
+       keys = thời điểm ĐÓNG của mỗi nến (ms), dirs = 'UP'/'DOWN'/'SIDE'."""
+    sec = {'4H': 4*3600, '6H': 6*3600, '12H': 12*3600, '1D': 86400, '1H': 3600}.get(bar, 4*3600)
+    bar_ms = sec * 1000
+    keys, dirs = [], []
+    for i in range(len(df)):
+        adx = float(df['adx'].iloc[i])
+        ef  = float(df['ema_fast'].iloc[i]); es = float(df['ema_slow'].iloc[i])
+        if adx < HTF_ADX_MIN:
+            d = 'SIDE'
+        elif ef > es:
+            d = 'UP'
+        elif ef < es:
+            d = 'DOWN'
+        else:
+            d = 'SIDE'
+        keys.append(int(df['ts'].iloc[i]) + bar_ms)   # close time = open + bar
+        dirs.append(d)
+    return keys, dirs
+
+
+def _htf_dir_at(keys, dirs, ts_ms):
+    """Direction của nến HTF gần nhất ĐÃ ĐÓNG trước ts_ms (không lookahead)."""
+    if not keys:
+        return None
+    idx = bisect.bisect_right(keys, ts_ms) - 1
+    return dirs[idx] if idx >= 0 else None
 
 
 # ════════════════════ BAR EVALUATION (no API, no DataFrame copy) ════════════════════
@@ -192,6 +226,18 @@ def run(
     if not dfs:
         return {'error': 'Không lấy được dữ liệu lịch sử'}
 
+    # ── 1b. Fetch regime khung lớn (4H) cho đại tu MTF ──────────
+    # Mỗi coin + BTC: tính direction 4H tại mỗi thời điểm để cổng regime giống live.
+    htf_regime: dict = {}   # coin → (keys, dirs)
+    htf_target = max(150, target_candles // 4 + 80)
+    htf_coins = set(dfs.keys()) | {BTC_REGIME_COIN}
+    for coin in htf_coins:
+        hdf = _fetch_history(f"{coin}-USDT-SWAP", bar=HTF_TIMEFRAME, target=htf_target)
+        if hdf is not None and len(hdf) >= 60:
+            hdf = add_indicators(hdf, ema_fast=HTF_EMA_FAST, ema_slow=HTF_EMA_SLOW)
+            htf_regime[coin] = _htf_regime_arrays(hdf, bar=HTF_TIMEFRAME)
+    btc_keys, btc_dirs = htf_regime.get(BTC_REGIME_COIN, ([], []))
+
     # ── 2. Common timeline ───────────────────────────────────────
     all_ts = sorted(set().union(*[set(df['ts']) for df in dfs.values()]))
     WARMUP = 100
@@ -264,8 +310,8 @@ def run(
                 pos['trail_anchor'] = max(pos['trail_anchor'], h)
                 new_stop = pos['trail_anchor'] - TRAIL_ATR_MULT * atr
                 pos['stop'] = max(pos['stop'], new_stop)
-                # Partial TP (intrabar HIGH)
-                if not pos['tp_fired']:
+                # Partial TP (intrabar HIGH) — chỉ khi BẬT
+                if ENABLE_PARTIAL_TP and not pos['tp_fired']:
                     tp_px = pos['entry_price'] + PARTIAL_TP_ATR_MULT * pos['entry_atr']
                     if h >= tp_px:
                         half_qty = (pos['notional'] / pos['entry_price']) * PARTIAL_TP_RATIO
@@ -283,7 +329,7 @@ def run(
                 pos['trail_anchor'] = min(pos['trail_anchor'], l)
                 new_stop = pos['trail_anchor'] + TRAIL_ATR_MULT * atr
                 pos['stop'] = min(pos['stop'], new_stop)
-                if not pos['tp_fired']:
+                if ENABLE_PARTIAL_TP and not pos['tp_fired']:
                     tp_px = pos['entry_price'] - PARTIAL_TP_ATR_MULT * pos['entry_atr']
                     if l <= tp_px:
                         half_qty = (pos['notional'] / pos['entry_price']) * PARTIAL_TP_RATIO
@@ -336,6 +382,16 @@ def run(
                 snap = _eval_bar(dfs[coin], ri)
                 sig  = snap.get('signal')
                 if not sig:
+                    continue
+                # ── CỔNG REGIME ĐA KHUNG (đại tu) ──
+                # 1H signal chỉ là TIMING; chỉ vào khi 4H của coin trending cùng chiều
+                # VÀ regime BTC không nghịch. Coin thiếu dữ liệu 4H → bỏ (giống live fetch fail).
+                if coin not in htf_regime:
+                    continue
+                ck, cd = htf_regime[coin]
+                htf_dir = _htf_dir_at(ck, cd, ts)
+                btc_dir = _htf_dir_at(btc_keys, btc_dirs, ts)
+                if not regime_allows(sig, htf_dir, btc_dir):
                     continue
                 if _is_correlated(coin, sig, positions):
                     continue

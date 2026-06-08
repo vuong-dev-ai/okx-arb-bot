@@ -226,6 +226,20 @@ def coin_score_map():
     return {s['coin']: s['score'] for s in coin_stats()}
 
 
+def wal_checkpoint():
+    """Gộp WAL vào DB chính + truncate (chống file -wal phình vô hạn khi chạy dài ngày)."""
+    try:
+        with _lock, _conn() as c:
+            c.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+    except Exception as e:
+        log.warning(f"wal_checkpoint: {e}")
+    try:
+        wal = DB_FILE + '-wal'
+        return os.path.getsize(wal) if os.path.exists(wal) else 0
+    except Exception:
+        return 0
+
+
 def global_stats():
     try:
         with _conn() as c:
