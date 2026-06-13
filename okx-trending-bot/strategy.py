@@ -47,8 +47,10 @@ CANDLE_LIMIT    = 200      # lấy 200 nến (≈8 ngày trên 1H) — đủ cho
 EMA_FAST        = 21
 EMA_SLOW        = 55
 ADX_PERIOD      = 14
-ADX_MIN         = 30.0     # nâng 15→30: lọc chop mạnh, chỉ vào trend đã xác lập. Backtest: ADX30 cải thiện
-                          # PF 0.38→0.77 vs ADX15. (ADX35 EV tốt nhất −6.7% nhưng chỉ 3.3 lệnh/ngày <5.)
+ADX_MIN         = 35.0     # nâng 30→35 (research 96 ngày/2299 nến, hard-stop & trail mô phỏng ĐÚNG live):
+                          # ADX35 cắt churn entry chất lượng thấp — ROI 96d -33%→-21%, REC60d -9%→+1%,
+                          # short_pnl -1262→-284. Bỏ ràng buộc "≥5 lệnh/ngày" cũ: với cạnh ÂM, ÍT lệnh
+                          # chất hơn là strictly tốt hơn. (Kết hợp price_confirm: -33%→-18.5%.) Xem research/bt_research.py.
 ATR_PERIOD      = 14
 
 CROSS_WINDOW    = 4        # nới 3→4: bắt cú cắt EMA trong 4 nến gần nhất (16h cho 4H) — vào lệnh dễ hơn
@@ -256,43 +258,74 @@ def get_trend_1d(coin: str):
 
 # ════════════════════ MULTI-TIMEFRAME REGIME (ĐẠI TU) ════════════════════
 def get_htf_regime(coin: str):
-    """Regime khung 4H. Trả (direction, adx):
-       - 'UP'/'DOWN' nếu 4H đang trending (ADX≥HTF_ADX_MIN) và EMA cùng chiều
-       - 'SIDE' nếu 4H không trending (chop) → KHÔNG trade
-       Trả None nếu fetch thất bại (caller coi như không đủ điều kiện)."""
+    """Regime khung 4H. Trả (direction, adx, dipos):
+       - direction: 'UP'/'DOWN' nếu 4H đang trending (ADX≥HTF_ADX_MIN) và EMA cùng chiều;
+                    'SIDE' nếu 4H không trending (chop) → KHÔNG trade
+       - adx: float
+       - dipos: cờ GIÁ ĐÓNG so với ema_slow trên nến 4H ĐÃ đóng
+                (1 nếu close>ema_slow, -1 nếu close<ema_slow, 0 nếu bằng).
+                Dùng cho price_confirm: xác nhận xu hướng thực, ít trễ hơn EMA-cross.
+       Trả None nếu fetch thất bại (caller coi như không đủ điều kiện).
+
+       KHÔNG lookahead: get_candles chỉ giữ nến confirm=='1' (đã đóng) nên df.iloc[-1]
+       là nến 4H gần nhất ĐÃ đóng — khớp 'close-time' của backtest."""
     df = get_candles(f"{coin}-USDT-SWAP", bar=HTF_TIMEFRAME, limit=200)
     if df is None or len(df) < 60:
         return None
     df = add_indicators(df, ema_fast=HTF_EMA_FAST, ema_slow=HTF_EMA_SLOW)
     last = df.iloc[-1]
     adx = float(last['adx'])
+    close = float(last['close'])
+    es = float(last['ema_slow'])
+    dipos = 1 if close > es else (-1 if close < es else 0)
     if adx < HTF_ADX_MIN:
-        return ('SIDE', adx)
+        return ('SIDE', adx, dipos)
     if last['ema_fast'] > last['ema_slow']:
-        return ('UP', adx)
+        return ('UP', adx, dipos)
     if last['ema_fast'] < last['ema_slow']:
-        return ('DOWN', adx)
-    return ('SIDE', adx)
+        return ('DOWN', adx, dipos)
+    return ('SIDE', adx, dipos)
 
 
 def get_btc_regime():
-    """Regime thị trường chung theo BTC 4H: 'UP'/'DOWN'/'SIDE'/None."""
+    """Regime thị trường chung theo BTC 4H. Trả (direction, dipos):
+       - direction: 'UP'/'DOWN'/'SIDE' hoặc None nếu fetch fail
+       - dipos: cờ giá BTC đóng so với ema_slow(4H) (1/-1/0); 0 nếu fetch fail.
+       (price_confirm cần CẢ direction LẪN cờ giá BTC.)"""
     r = get_htf_regime(BTC_REGIME_COIN)
-    return r[0] if r else None
+    if not r:
+        return (None, 0)
+    return (r[0], r[2])
 
 
-def regime_allows(side: str, htf_dir, btc_dir) -> bool:
-    """Cổng regime đa khung (loại chop + rủi ro tương quan BTC).
+def regime_allows(side: str, htf_dir, btc_dir, htf_dipos=None, btc_dipos=None) -> bool:
+    """Cổng regime đa khung (loại chop + rủi ro tương quan BTC + GIÁ xác nhận).
 
-    LONG  : 4H phải UP   và BTC KHÔNG đang DOWN.
-    SHORT : 4H phải DOWN và BTC KHÔNG đang UP.
-    htf_dir None/SIDE → từ chối (4H không trending hoặc fetch fail)."""
+    Mirror đúng biến thể 'price_confirm' đã thắng grid trong bt_research.py:
+      LONG  : 4H UP   và BTC≠DOWN và giá BTC≥ema_slow(btc_dipos>=0) và giá coin≥ema_slow(htf_dipos>=0)
+      SHORT : 4H DOWN và BTC≠UP   và giá BTC≤ema_slow(btc_dipos<=0) và giá coin≤ema_slow(htf_dipos<=0)
+
+    htf_dir None/SIDE → từ chối (4H không trending hoặc fetch fail).
+    htf_dipos/btc_dipos = None → bỏ qua cổng giá (tương thích ngược với caller cũ
+    như backtest.py 3 đối số)."""
     if not htf_dir or htf_dir == 'SIDE':
         return False
     if side == 'LONG':
-        return htf_dir == 'UP' and btc_dir != 'DOWN'
+        if not (htf_dir == 'UP' and btc_dir != 'DOWN'):
+            return False
+        if htf_dipos is not None and htf_dipos < 0:
+            return False
+        if btc_dipos is not None and btc_dipos < 0:
+            return False
+        return True
     if side == 'SHORT':
-        return htf_dir == 'DOWN' and btc_dir != 'UP'
+        if not (htf_dir == 'DOWN' and btc_dir != 'UP'):
+            return False
+        if htf_dipos is not None and htf_dipos > 0:
+            return False
+        if btc_dipos is not None and btc_dipos > 0:
+            return False
+        return True
     return False
 
 

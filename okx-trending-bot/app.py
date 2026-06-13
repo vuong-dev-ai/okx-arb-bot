@@ -536,8 +536,8 @@ def _bot():
                          'skip_corr': 0, 'skip_full': 0, 'skip_atr': 0, 'opened': 0}
                 LEV = float(LEVERAGE)
                 # Regime thị trường (BTC 4H) tính 1 LẦN/scan — cổng risk-on/off cho toàn rổ alt.
-                btc_dir = get_btc_regime()
-                _log(f"Regime BTC (4H) = {btc_dir or '?'}")
+                btc_dir, btc_dipos = get_btc_regime()
+                _log(f"Regime BTC (4H) = {btc_dir or '?'} (giá vs ema_slow={btc_dipos:+d})")
                 # Snapshot vị thế OKX để biết coin nào của bot KHÁC (chung TK) — tránh đụng.
                 okx_now = get_okx_swap_positions() or {}
 
@@ -600,8 +600,9 @@ def _bot():
                     # ── CỔNG REGIME ĐA KHUNG (ĐẠI TU): 1H chỉ là timing; cần 4H trending cùng chiều
                     #    + regime BTC không nghịch (loại chop & rủi ro tương quan) ──
                     htf = get_htf_regime(coin)
-                    htf_dir = htf[0] if htf else None
-                    if not regime_allows(sig, htf_dir, btc_dir):
+                    htf_dir   = htf[0] if htf else None
+                    htf_dipos = htf[2] if htf else None
+                    if not regime_allows(sig, htf_dir, btc_dir, htf_dipos, btc_dipos):
                         _log(f"[{coin}] Bỏ qua {sig} — regime chưa thuận (4H={htf_dir or '?'}, BTC={btc_dir or '?'})")
                         stats['skip_regime'] += 1
                         continue

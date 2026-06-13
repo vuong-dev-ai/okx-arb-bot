@@ -13,7 +13,7 @@ import bisect
 from config import market_api
 from strategy import (
     SCAN_COINS, TIMEFRAME, ADX_MIN,
-    STOP_ATR_MULT, TRAIL_ATR_MULT, RISK_PCT, MAX_POS_PCT, MIN_USDT,
+    STOP_ATR_MULT, TRAIL_ATR_MULT, RISK_PCT, MAX_POS_PCT, MIN_USDT, MAX_LOSS_PCT,
     PARTIAL_TP_ATR_MULT, PARTIAL_TP_RATIO, ATR_PCT_MAX, ENABLE_PARTIAL_TP,
     CORRELATED_GROUPS, VOL_FACTOR, ADX_STRONG,
     add_indicators, GAP_PCT_MIN, GAP_PCT_MAX, CROSS_WINDOW,
@@ -90,14 +90,16 @@ def _fetch_history(inst_id: str, bar: str = '4H', target: int = 600) -> Optional
 
 # ════════════════════ HTF REGIME (cho đại tu MTF) ════════════════════
 def _htf_regime_arrays(df, bar=HTF_TIMEFRAME):
-    """Từ df khung lớn (đã add_indicators) → (keys, dirs):
-       keys = thời điểm ĐÓNG của mỗi nến (ms), dirs = 'UP'/'DOWN'/'SIDE'."""
+    """Từ df khung lớn (đã add_indicators) → (keys, dirs, diposes):
+       keys = thời điểm ĐÓNG của mỗi nến (ms), dirs = 'UP'/'DOWN'/'SIDE',
+       diposes = cờ giá đóng vs ema_slow (1/-1/0) cho price_confirm (mirror live get_htf_regime)."""
     sec = {'4H': 4*3600, '6H': 6*3600, '12H': 12*3600, '1D': 86400, '1H': 3600}.get(bar, 4*3600)
     bar_ms = sec * 1000
-    keys, dirs = [], []
+    keys, dirs, diposes = [], [], []
     for i in range(len(df)):
         adx = float(df['adx'].iloc[i])
         ef  = float(df['ema_fast'].iloc[i]); es = float(df['ema_slow'].iloc[i])
+        cl  = float(df['close'].iloc[i])
         if adx < HTF_ADX_MIN:
             d = 'SIDE'
         elif ef > es:
@@ -108,15 +110,18 @@ def _htf_regime_arrays(df, bar=HTF_TIMEFRAME):
             d = 'SIDE'
         keys.append(int(df['ts'].iloc[i]) + bar_ms)   # close time = open + bar
         dirs.append(d)
-    return keys, dirs
+        diposes.append(1 if cl > es else (-1 if cl < es else 0))
+    return keys, dirs, diposes
 
 
-def _htf_dir_at(keys, dirs, ts_ms):
-    """Direction của nến HTF gần nhất ĐÃ ĐÓNG trước ts_ms (không lookahead)."""
+def _htf_at(keys, dirs, diposes, ts_ms):
+    """(direction, dipos) của nến HTF gần nhất ĐÃ ĐÓNG trước ts_ms (không lookahead)."""
     if not keys:
-        return None
+        return None, None
     idx = bisect.bisect_right(keys, ts_ms) - 1
-    return dirs[idx] if idx >= 0 else None
+    if idx < 0:
+        return None, None
+    return dirs[idx], diposes[idx]
 
 
 # ════════════════════ BAR EVALUATION (no API, no DataFrame copy) ════════════════════
@@ -236,7 +241,7 @@ def run(
         if hdf is not None and len(hdf) >= 60:
             hdf = add_indicators(hdf, ema_fast=HTF_EMA_FAST, ema_slow=HTF_EMA_SLOW)
             htf_regime[coin] = _htf_regime_arrays(hdf, bar=HTF_TIMEFRAME)
-    btc_keys, btc_dirs = htf_regime.get(BTC_REGIME_COIN, ([], []))
+    btc_keys, btc_dirs, btc_dipos = htf_regime.get(BTC_REGIME_COIN, ([], [], []))
 
     # ── 2. Common timeline ───────────────────────────────────────
     all_ts = sorted(set().union(*[set(df['ts']) for df in dfs.values()]))
@@ -306,9 +311,9 @@ def run(
             pos = positions[coin]
 
             if pos['side'] == 'LONG':
-                # Trailing stop ratchet
+                # Trailing stop ratchet — entry_atr CỐ ĐỊNH (mirror live: update_pnl_and_stop dùng entry_atr)
                 pos['trail_anchor'] = max(pos['trail_anchor'], h)
-                new_stop = pos['trail_anchor'] - TRAIL_ATR_MULT * atr
+                new_stop = pos['trail_anchor'] - TRAIL_ATR_MULT * pos['entry_atr']
                 pos['stop'] = max(pos['stop'], new_stop)
                 # Partial TP (intrabar HIGH) — chỉ khi BẬT
                 if ENABLE_PARTIAL_TP and not pos['tp_fired']:
@@ -322,12 +327,13 @@ def run(
                         pos['notional'] *= (1 - PARTIAL_TP_RATIO)
                         pos['margin']   *= (1 - PARTIAL_TP_RATIO)
                         pos['tp_fired']  = True
-                # Stop (intrabar LOW)
-                if l <= pos['stop']:
-                    _close(pos, min(pos['stop'], c), ts, 'stop'); continue
+                # Stop (intrabar LOW) — gồm hard-stop -MAX_LOSS_PCT DI CHUYỂN GIÁ (mirror live app.py)
+                eff_stop = max(pos['stop'], pos['entry_price'] * (1 - MAX_LOSS_PCT))
+                if l <= eff_stop:
+                    _close(pos, min(eff_stop, c), ts, 'stop'); continue
             else:  # SHORT
                 pos['trail_anchor'] = min(pos['trail_anchor'], l)
-                new_stop = pos['trail_anchor'] + TRAIL_ATR_MULT * atr
+                new_stop = pos['trail_anchor'] + TRAIL_ATR_MULT * pos['entry_atr']
                 pos['stop'] = min(pos['stop'], new_stop)
                 if ENABLE_PARTIAL_TP and not pos['tp_fired']:
                     tp_px = pos['entry_price'] - PARTIAL_TP_ATR_MULT * pos['entry_atr']
@@ -340,8 +346,9 @@ def run(
                         pos['notional'] *= (1 - PARTIAL_TP_RATIO)
                         pos['margin']   *= (1 - PARTIAL_TP_RATIO)
                         pos['tp_fired']  = True
-                if h >= pos['stop']:
-                    _close(pos, max(pos['stop'], c), ts, 'stop'); continue
+                eff_stop = min(pos['stop'], pos['entry_price'] * (1 + MAX_LOSS_PCT))
+                if h >= eff_stop:
+                    _close(pos, max(eff_stop, c), ts, 'stop'); continue
 
             # MFE / MAE tracking
             fav = (h - pos['entry_price']) / pos['entry_price'] * 100 if pos['side'] == 'LONG' \
@@ -388,10 +395,11 @@ def run(
                 # VÀ regime BTC không nghịch. Coin thiếu dữ liệu 4H → bỏ (giống live fetch fail).
                 if coin not in htf_regime:
                     continue
-                ck, cd = htf_regime[coin]
-                htf_dir = _htf_dir_at(ck, cd, ts)
-                btc_dir = _htf_dir_at(btc_keys, btc_dirs, ts)
-                if not regime_allows(sig, htf_dir, btc_dir):
+                ck, cd, cdp = htf_regime[coin]
+                htf_dir, htf_dipos = _htf_at(ck, cd, cdp, ts)
+                btc_dir, btc_dp    = _htf_at(btc_keys, btc_dirs, btc_dipos, ts)
+                # mirror live: price_confirm (truyền dipos coin + BTC)
+                if not regime_allows(sig, htf_dir, btc_dir, htf_dipos, btc_dp):
                     continue
                 if _is_correlated(coin, sig, positions):
                     continue
