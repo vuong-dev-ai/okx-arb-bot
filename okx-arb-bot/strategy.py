@@ -174,7 +174,12 @@ def get_funding_income(swap_id, since_ts):
                 continue
             if float(b.get('ts') or 0) < since_ms:
                 continue
-            total += float(b.get('balChg') or b.get('pnl') or 0)
+            # Funding của bill type=8 nằm ở 'balChg' (live) NHƯNG OKX DEMO trả balChg='0.0000'
+            # và để funding thật ở 'pnl'. Bug cũ `balChg or pnl`: '0.0000' là chuỗi truthy nên
+            # KHÔNG bao giờ fallback sang pnl ⇒ funding LUÔN = 0 (gốc của ARB bleed phí 0.3%/lệnh).
+            bc = float(b.get('balChg') or 0)
+            pn = float(b.get('pnl') or 0)
+            total += bc if bc != 0 else pn
         except (ValueError, TypeError):
             continue
     return total

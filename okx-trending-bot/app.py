@@ -51,12 +51,30 @@ from ws_ticker import TickerWS
 _ws = TickerWS([f"{c}-USDT-SWAP" for c in SCAN_COINS], simulated=SIMULATED, max_age=15)
 
 
+# Lọc tick rác (phantom price): 1 tick nhảy quá ngưỡng này so với giá tốt gần nhất bị nghi là
+# dữ liệu lỗi → xác minh lại bằng REST trước khi tin. Gốc vụ DOT id=20: tick rác 1.32 (giá thật ~0.94)
+# vừa kích hoạt stop SAI (lệnh đang lời), vừa bị ghi làm exit_price ⇒ lỗ ẢO −659 USDT.
+_MAX_TICK_JUMP = 0.25          # >25% lệch trong 1 tick = nghi giá rác
+_last_good_px = {}            # {swap_id: giá tốt gần nhất}
+
 def _get_price(swap_id):
-    """Ưu tiên giá từ WebSocket cache (sub-second), fallback REST."""
+    """Giá realtime từ WebSocket cache (sub-second), fallback REST — có lọc tick rác."""
     p = _ws.get_price(swap_id)
-    if p is not None:
-        return p
-    return get_last_price(swap_id)
+    if p is None:
+        p = get_last_price(swap_id)
+    if not p or p <= 0:
+        return _last_good_px.get(swap_id)
+    prev = _last_good_px.get(swap_id)
+    if prev and abs(p - prev) / prev > _MAX_TICK_JUMP:
+        # Nghi giá rác — REST là nguồn xác thực. Nếu REST cũng xác nhận cú nhảy thì đó là move THẬT.
+        rest = get_last_price(swap_id)
+        if rest and rest > 0:
+            p = rest
+        else:
+            _log(f"[{swap_id}] ⚠ Bỏ tick nghi rác {p:.6g} (giá tốt gần nhất {prev:.6g}, REST fail) — giữ giá cũ")
+            return prev
+    _last_good_px[swap_id] = p
+    return p
 
 analytics.init()
 analytics.backfill_fees()  # cập nhật fee cho trade cũ trong DB
@@ -197,7 +215,7 @@ def _close_one(p, reason, exit_price=None):
         return False
     try:
         if exit_price is None:
-            exit_price = get_last_price(p['swap_id']) or p['entry_price']
+            exit_price = _get_price(p['swap_id']) or p['entry_price']  # qua bộ lọc tick rác
         try:
             close_position(p)
         except Exception as e:
