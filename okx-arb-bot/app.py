@@ -516,6 +516,14 @@ def _bot():
                             if not ok:
                                 _log("Không lấy được khóa giao dịch (bot kia đang đặt lệnh) — dừng scan, thử lượt sau")
                                 break
+                            # OWNERSHIP RE-CHECK ATOMIC DƯỚI KHÓA (fix net_mode chân short tan rã):
+                            # snapshot okx_now ở đầu scan có thể CŨ — bot kia có thể vừa mở coin này.
+                            # Vì CẢ 2 bot mở lệnh dưới CÙNG file-lock (tuần tự), re-đọc vị thế OKX lúc
+                            # này CHẮC CHẮN thấy vị thế bot kia vừa mở ⇒ không bao giờ net cùng instrument.
+                            okx_fresh = get_okx_swap_positions()
+                            if okx_fresh is not None and coin in okx_fresh and coin not in own:
+                                _log(f"[{coin}] Bỏ qua (re-check dưới khóa) — coin đã có vị thế bot khác (chung TK)")
+                                continue
                             # Re-đọc số dư TRONG khóa cho tươi; tính ngân sách arb (capital fraction).
                             available = get_available_usdt()
                             with _lock:

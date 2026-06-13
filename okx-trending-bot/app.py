@@ -620,6 +620,12 @@ def _bot():
                         if not ok:
                             _log("Không lấy được khóa giao dịch (bot kia đang đặt lệnh) — bỏ coin này")
                             continue
+                        # OWNERSHIP RE-CHECK ATOMIC DƯỚI KHÓA (fix net_mode): okx_now đầu scan có thể CŨ;
+                        # re-đọc OKX dưới CÙNG file-lock thấy vị thế arb-bot vừa mở ⇒ không net cùng instrument.
+                        okx_fresh = get_okx_swap_positions()
+                        if okx_fresh is not None and coin in okx_fresh and coin not in own:
+                            _log(f"[{coin}] Bỏ qua (re-check dưới khóa) — coin đã có vị thế bot khác (chung TK)")
+                            continue
                         available = get_available_usdt()
                         with _lock:
                             deployed_margin = sum((x.get('notional') or 0) / LEV for x in _state['positions'])
