@@ -83,7 +83,7 @@ def _fetch_deep(inst_id: str, bar: str, target: int) -> Optional[pd.DataFrame]:
     return (pd.DataFrame(rows).sort_values('ts').drop_duplicates('ts').reset_index(drop=True))
 
 
-def build_cache(refetch=False, tf_target=2200, htf_target=700):
+def build_cache(refetch=False, tf_target=6000, htf_target=2000):
     path = os.path.join(CACHE_DIR, 'klines.pkl')
     if os.path.exists(path) and not refetch:
         with open(path, 'rb') as f:
@@ -144,17 +144,32 @@ def _dir_at(keys, dirs, ts_ms):
 
 def prep(data):
     coins = [c for c in S.SCAN_COINS if c in data['tf']]
+    DON_WINDOWS = [10, 20, 30, 55]
+    ROC_WINDOWS = [12, 24, 48]
     dfs, idx_map, arrs = {}, {}, {}
     for c in coins:
         df = S.add_indicators(data['tf'][c]).reset_index(drop=True)
         dfs[c] = df
         idx_map[c] = {int(ts): i for i, ts in enumerate(df['ts'])}
-        arrs[c] = dict(
-            ts=df['ts'].to_numpy(), o=df['open'].to_numpy(), h=df['high'].to_numpy(),
-            l=df['low'].to_numpy(), c=df['close'].to_numpy(), v=df['vol'].to_numpy(),
+        hi, lo, cl = df['high'], df['low'], df['close']
+        a = dict(
+            ts=df['ts'].to_numpy(), o=df['open'].to_numpy(), h=hi.to_numpy(),
+            l=lo.to_numpy(), c=cl.to_numpy(), v=df['vol'].to_numpy(),
             ef=df['ema_fast'].to_numpy(), es=df['ema_slow'].to_numpy(),
             atr=df['atr'].to_numpy(), adx=df['adx'].to_numpy(),
+            pdi=df['plus_di'].to_numpy(), mdi=df['minus_di'].to_numpy(),
         )
+        # Donchian: high/low của N nến TRƯỚC (shift(1) → loại nến hiện tại, KHÔNG lookahead)
+        a['don_hi'] = {n: hi.rolling(n).max().shift(1).to_numpy() for n in DON_WINDOWS}
+        a['don_lo'] = {n: lo.rolling(n).min().shift(1).to_numpy() for n in DON_WINDOWS}
+        # ROC% = (close/close[-n] - 1)*100 (momentum)
+        a['roc'] = {n: (cl / cl.shift(n) - 1).mul(100).to_numpy() for n in ROC_WINDOWS}
+        # RSI(14) (Wilder)
+        d = cl.diff()
+        up = d.clip(lower=0).ewm(alpha=1/14, adjust=False).mean()
+        dn = (-d.clip(upper=0)).ewm(alpha=1/14, adjust=False).mean()
+        a['rsi'] = (100 - 100/(1 + up/dn.replace(0, np.nan))).fillna(50).to_numpy()
+        arrs[c] = a
     htf = {}
     for c, hdf in data['htf'].items():
         h2 = S.add_indicators(hdf, ema_fast=S.HTF_EMA_FAST, ema_slow=S.HTF_EMA_SLOW)
@@ -163,8 +178,14 @@ def prep(data):
     return dict(coins=coins, dfs=dfs, idx_map=idx_map, arrs=arrs, htf=htf, timeline=timeline)
 
 
-# ════════════════════ ENTRY EVAL (khớp strategy._eval_bar / evaluate) ════════════════════
-def _eval(a, idx, p):
+# ════════════════════ ENTRY MODELS (cắm-rút qua p['entry_model']) ════════════════════
+def _entry(a, idx, p):
+    """Dispatcher: gọi mô hình entry theo p['entry_model']. Mỗi model trả (sig, entry_px, atr) hoặc None."""
+    return _ENTRY_MODELS.get(p.get('entry_model', 'emacross'), _entry_emacross)(a, idx, p)
+
+
+# ── Model: EMA-cross/continuation (BASELINE — khớp strategy._eval_bar / evaluate hiện tại) ──
+def _entry_emacross(a, idx, p):
     if idx < 70:
         return None
     c = a['c'][idx]; atr = a['atr'][idx]
@@ -203,6 +224,163 @@ def _eval(a, idx, p):
     return None if sig is None else (sig, c, atr)
 
 
+def _common_ok(a, idx, p):
+    """Guard chung: đủ data, atr%/giá hợp lệ. Trả (c, atr) hoặc None."""
+    if idx < 70:
+        return None
+    c, atr = a['c'][idx], a['atr'][idx]
+    if c <= 0 or atr <= 0 or atr / c * 100 > S.ATR_PCT_MAX:
+        return None
+    if a['adx'][idx] < p['adx_min']:
+        return None
+    return c, atr
+
+
+# ── Model: BREAKOUT Donchian (close vượt high/low N nến TRƯỚC) ──
+def _entry_breakout(a, idx, p):
+    g = _common_ok(a, idx, p)
+    if not g:
+        return None
+    c, atr = g
+    n = p.get('don_n', 20)
+    hi, lo = a['don_hi'][n][idx], a['don_lo'][n][idx]
+    if hi != hi or lo != lo:        # nan (chưa đủ N nến)
+        return None
+    if p.get('bo_vol'):
+        av = a['v'][max(0, idx-21):idx].mean()
+        if not (av > 0 and a['v'][idx] > S.VOL_FACTOR * av):
+            return None
+    if c > hi:
+        return ('LONG', c, atr)
+    if c < lo:
+        return ('SHORT', c, atr)
+    return None
+
+
+# ── Model: PULLBACK trong xu hướng (hồi về ema_fast rồi bật lại) ──
+def _entry_pullback(a, idx, p):
+    g = _common_ok(a, idx, p)
+    if not g:
+        return None
+    c, atr = g
+    ef, es = a['ef'][idx], a['es'][idx]
+    k = p.get('pb_k', 0.5)
+    if ef > es:                     # uptrend
+        pulled = a['l'][idx-1] <= ef + k*atr
+        resume = c > ef and c > a['c'][idx-1]
+        if pulled and resume:
+            return ('LONG', c, atr)
+    elif ef < es:                   # downtrend
+        pulled = a['h'][idx-1] >= ef - k*atr
+        resume = c < ef and c < a['c'][idx-1]
+        if pulled and resume:
+            return ('SHORT', c, atr)
+    return None
+
+
+# ── Model: MOMENTUM (ROC vượt ngưỡng, cùng chiều EMA) ──
+def _entry_momentum(a, idx, p):
+    g = _common_ok(a, idx, p)
+    if not g:
+        return None
+    c, atr = g
+    n, thr = p.get('roc_n', 24), p.get('roc_thr', 3.0)
+    r = a['roc'][n][idx]
+    if r != r:
+        return None
+    ef, es = a['ef'][idx], a['es'][idx]
+    if r >= thr and ef > es:
+        return ('LONG', c, atr)
+    if r <= -thr and ef < es:
+        return ('SHORT', c, atr)
+    return None
+
+
+# ── Model: EMA-cross + bộ lọc (ROC cùng chiều / RSI không cực đoan) ──
+def _entry_emacross_filtered(a, idx, p):
+    base = _entry_emacross(a, idx, p)
+    if not base:
+        return None
+    sig = base[0]
+    if p.get('f_roc'):
+        r = a['roc'][p.get('roc_n', 24)][idx]
+        if r == r:
+            m = p.get('f_roc_min', 0.0)
+            if sig == 'LONG' and r < m:
+                return None
+            if sig == 'SHORT' and r > -m:
+                return None
+    if p.get('f_rsi'):
+        rsi = a['rsi'][idx]
+        if sig == 'LONG' and rsi > p.get('f_rsi_hi', 78):
+            return None
+        if sig == 'SHORT' and rsi < p.get('f_rsi_lo', 22):
+            return None
+    return base
+
+
+# ── Model: PULLBACK MEAN-REVERT trong trend (mua dip về EMA + RSI; bán rally) — thiết kế Agent 5 ──
+# Tape mean-reverting → "mua khi hồi về vùng giá trị trong trend" có forward-edge dương.
+def _entry_pullback_mr(a, idx, p):
+    g = _common_ok(a, idx, p)            # idx>=70, c/atr hợp lệ, atr%<6, adx>=adx_min
+    if not g:
+        return None
+    c, atr = g
+    ef, es = a['ef'][idx], a['es'][idx]
+    rsi = a['rsi'][idx]
+    dip_ema = es if p.get('pb_deep') else ef    # hồi về EMA55 (sâu) hay EMA21 (nông)
+    if ef > es:                          # uptrend → mua dip
+        if a['l'][idx] <= dip_ema and rsi < p.get('rsi_long_max', 45):
+            return ('LONG', c, atr)
+    elif ef < es:                        # downtrend → bán rally
+        if a['h'][idx] >= dip_ema and rsi > p.get('rsi_short_min', 55):
+            return ('SHORT', c, atr)
+    return None
+
+
+# ── Model: DONCHIAN RETEST (chờ giá test lại mức phá vỡ rồi mới vào) — thiết kế Agent 1 ──
+def _entry_retest(a, idx, p):
+    g = _common_ok(a, idx, p)
+    if not g:
+        return None
+    c, atr = g
+    ef, es = a['ef'][idx], a['es'][idx]
+    n = p.get('don_n', 20)
+    w = p.get('retest_w', 12)
+    pull = p.get('pull_atr', 1.0)
+    don_hi, don_lo = a['don_hi'][n], a['don_lo'][n]
+    if ef > es:                          # uptrend: tìm breakout-up gần đây rồi retest
+        for b in range(idx - w, idx):
+            if b < n:
+                continue
+            lvl = don_hi[b]              # = max(high[b-n:b]) (đã shift)
+            if lvl == lvl and a['c'][b] > lvl:   # nến b đã phá kênh
+                if lvl <= c <= lvl + pull * atr:  # giá nay retest giữ trên mức phá vỡ
+                    return ('LONG', c, atr)
+                break
+    elif ef < es:
+        for b in range(idx - w, idx):
+            if b < n:
+                continue
+            lvl = don_lo[b]
+            if lvl == lvl and a['c'][b] < lvl:
+                if lvl - pull * atr <= c <= lvl:
+                    return ('SHORT', c, atr)
+                break
+    return None
+
+
+_ENTRY_MODELS = {
+    'emacross':          _entry_emacross,
+    'emacross_filtered': _entry_emacross_filtered,
+    'breakout':          _entry_breakout,
+    'pullback':          _entry_pullback,
+    'pullback_mr':       _entry_pullback_mr,
+    'retest':            _entry_retest,
+    'momentum':          _entry_momentum,
+}
+
+
 # ════════════════════ REGIME GATE (các biến thể) ════════════════════
 def _regime_ok(p, sig, htf_dir, htf_dipos, btc_dir, btc_dipos):
     mode = p['regime_mode']
@@ -232,7 +410,7 @@ DEFAULTS = dict(
     stop_mult=S.STOP_ATR_MULT, trail_mult=S.TRAIL_ATR_MULT, use_entry_atr=True,
     hard_stop_pct=S.MAX_LOSS_PCT, be_trigger=None, be_offset=0.0,
     time_stop_h=None, time_stop_min_profit_pct=None,
-    regime_mode='current', enable_short=True,
+    regime_mode='current', enable_short=True, entry_model='emacross',
     adx_min=S.ADX_MIN, cross_window=S.CROSS_WINDOW,
     risk_pct=S.RISK_PCT, max_pos_pct=S.MAX_POS_PCT, min_usdt=S.MIN_USDT, max_pos=5,
     initial_balance=10_000.0,
@@ -242,6 +420,12 @@ DEFAULTS = dict(
 def simulate(D, params=None, ts_from=None, ts_to=None):
     p = dict(DEFAULTS); p.update(params or {})
     coins, idx_map, arrs, htf = D['coins'], D['idx_map'], D['arrs'], D['htf']
+    if p.get('universe'):                       # giới hạn rổ coin (vd majors-only)
+        uni = set(p['universe'])
+        coins = [c for c in coins if c in uni]
+    if p.get('exclude'):                         # loại coin (vd DOT phantom-price artifact)
+        ex = set(p['exclude'])
+        coins = [c for c in coins if c not in ex]
     btc = htf.get(BTC_COIN, ([], [], []))
     btc_keys, btc_dirs, btc_dipos = btc
 
@@ -288,6 +472,10 @@ def simulate(D, params=None, ts_from=None, ts_to=None):
                 stop_px = o['stop'] if hard_px is None else max(o['stop'], hard_px)
                 if l <= stop_px:
                     close(o, min(stop_px, c), ts, 'stop'); continue
+                if p.get('tp_atr'):                  # take-profit (cho entry mean-revert)
+                    tp = o['entry_price'] + p['tp_atr'] * o['entry_atr']
+                    if h >= tp:
+                        close(o, tp, ts, 'tp'); continue
             else:
                 o['trail_anchor'] = min(o['trail_anchor'], l)
                 o['stop'] = min(o['stop'], o['trail_anchor'] + tmult * atr)
@@ -297,6 +485,10 @@ def simulate(D, params=None, ts_from=None, ts_to=None):
                 stop_px = o['stop'] if hard_px is None else min(o['stop'], hard_px)
                 if h >= stop_px:
                     close(o, max(stop_px, c), ts, 'stop'); continue
+                if p.get('tp_atr'):                  # take-profit (cho entry mean-revert)
+                    tp = o['entry_price'] - p['tp_atr'] * o['entry_atr']
+                    if l <= tp:
+                        close(o, tp, ts, 'tp'); continue
             # MFE/MAE (% notional, leverage-aware: dùng price move / entry * lev? — giữ % giá cho so sánh)
             fav = (h - o['entry_price'])/o['entry_price']*100 if o['side']=='LONG' else (o['entry_price']-l)/o['entry_price']*100
             adv = (l - o['entry_price'])/o['entry_price']*100 if o['side']=='LONG' else (o['entry_price']-h)/o['entry_price']*100
@@ -342,7 +534,7 @@ def simulate(D, params=None, ts_from=None, ts_to=None):
                 if not im or ts not in im:
                     continue
                 ri = im[ts]
-                ev = _eval(arrs[coin], ri, p)
+                ev = _entry(arrs[coin], ri, p)
                 if not ev:
                     continue
                 sig, entry, atr = ev
@@ -499,9 +691,58 @@ def run_grid(D):
         print(f"  PF={m['pf']:.2f} ROI={m['roi']:.1f} mDD={m['max_dd']:.1f} n={m['n']} reg={c['regime_mode']} short={c['enable_short']} adx={c['adx_min']:.0f} trail={c['trail_mult']} be={c['be_trigger']} ts={c['time_stop_h']}")
 
 
+def run_entry_sweep(D, configs):
+    """Đánh giá danh sách (name, cfg) trên full + 2 nửa OOS. Xếp hạng theo robust score.
+    Robust score: ROI full nhưng PHẠT nặng nếu nửa nào âm (ưu tiên dương cả 2 nửa)."""
+    half = D['timeline'][len(D['timeline'])//2]
+    rows = []
+    for name, cfg in configs:
+        f  = simulate(D, cfg)
+        h1 = simulate(D, cfg, ts_to=half)
+        h2 = simulate(D, cfg, ts_from=half)
+        both_pos = h1['roi'] > 0 and h2['roi'] > 0
+        # robust score: trung bình 2 nửa, phạt nếu lệch dấu, thưởng nếu cả 2 dương
+        score = min(h1['roi'], h2['roi']) + 0.3 * f['roi'] + (10 if both_pos else 0)
+        rows.append(dict(name=name, cfg=cfg, full=f, h1=h1['roi'], h2=h2['roi'],
+                         both_pos=both_pos, score=score))
+    rows.sort(key=lambda r: r['score'], reverse=True)
+    print(f"\n{'#':>2} {'model/name':24s} {'FULL':>7} {'PF':>5} {'mDD':>6} {'n':>4} {'L/S':>9} "
+          f"{'Lpnl':>7} {'Spnl':>7} {'OOS h1/h2':>14} {'2pos':>5} {'score':>6}")
+    for i, r in enumerate(rows[:30]):
+        m = r['full']
+        print(f"{i+1:>2} {r['name'][:24]:24s} {m['roi']:>7.1f} {m['pf']:>5.2f} {m['max_dd']:>6.0f} {m['n']:>4} "
+              f"{str(m['n_long'])+'/'+str(m['n_short']):>9} {m['long_pnl']:>7.0f} {m['short_pnl']:>7.0f} "
+              f"{r['h1']:>6.1f}/{r['h2']:<6.1f} {str(r['both_pos']):>5} {r['score']:>6.1f}")
+    with open(os.path.join(_HERE, 'entry_sweep.json'), 'w', encoding='utf-8') as f:
+        json.dump([{'name': r['name'], 'cfg': r['cfg'], 'full': r['full'],
+                    'h1': r['h1'], 'h2': r['h2'], 'score': r['score']} for r in rows], f, ensure_ascii=False, indent=1)
+    print(f"\n[entry_sweep] -> entry_sweep.json ({len(rows)} configs)")
+    return rows
+
+
+def _default_entry_configs():
+    """Bộ config khởi đầu — sẽ mở rộng theo thiết kế từ workflow."""
+    cfgs = []
+    base = dict(regime_mode='price_confirm', adx_min=35.0)   # nền tốt nhất từ sweep trước
+    cfgs.append(('emacross (baseline live)', dict(regime_mode='current', adx_min=30.0)))
+    cfgs.append(('emacross+pc+adx35', dict(base)))
+    for n in (10, 20, 30, 55):
+        cfgs.append((f'breakout don{n}+pc', dict(base, entry_model='breakout', don_n=n)))
+        cfgs.append((f'breakout don{n}+pc+vol', dict(base, entry_model='breakout', don_n=n, bo_vol=True)))
+    for k in (0.3, 0.5, 1.0):
+        cfgs.append((f'pullback k{k}+pc', dict(base, entry_model='pullback', pb_k=k)))
+    for (n, thr) in ((12, 2.0), (24, 3.0), (24, 5.0), (48, 5.0)):
+        cfgs.append((f'momentum roc{n}>{thr}+pc', dict(base, entry_model='momentum', roc_n=n, roc_thr=thr)))
+    cfgs.append(('emacross_filt roc+pc', dict(base, entry_model='emacross_filtered', f_roc=True, f_roc_min=0.0)))
+    cfgs.append(('emacross_filt rsi+pc', dict(base, entry_model='emacross_filtered', f_rsi=True)))
+    # long-only biến thể (crypto drift)
+    cfgs.append(('breakout don20 LONG-only', dict(base, entry_model='breakout', don_n=20, enable_short=False)))
+    return cfgs
+
+
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
-    ap.add_argument('cmd', choices=['cache', 'baseline', 'grid', 'coverage', 'cfg'])
+    ap.add_argument('cmd', choices=['cache', 'baseline', 'grid', 'coverage', 'cfg', 'entrygrid'])
     ap.add_argument('--refetch', action='store_true')
     ap.add_argument('--json', default='{}', help='config JSON cho lệnh cfg')
     args = ap.parse_args()
@@ -530,6 +771,10 @@ if __name__ == '__main__':
 
     if args.cmd == 'grid':
         run_grid(D)
+        sys.exit(0)
+
+    if args.cmd == 'entrygrid':
+        run_entry_sweep(D, _default_entry_configs())
         sys.exit(0)
 
     if args.cmd == 'cfg':
