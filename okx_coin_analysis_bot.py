@@ -26,7 +26,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -71,6 +71,7 @@ MIN_SCORE_EDGE = float(os.getenv("OKX_SIGNAL_MIN_SCORE_EDGE", "0.75"))
 TP_ATR = float(os.getenv("OKX_SIGNAL_TP_ATR", "1.2"))
 SL_ATR = float(os.getenv("OKX_SIGNAL_SL_ATR", "0.9"))
 HTTP_TIMEOUT = float(os.getenv("OKX_SIGNAL_HTTP_TIMEOUT", "12"))
+REPORT_TZ_OFFSET = float(os.getenv("OKX_SIGNAL_TZ_OFFSET", "7"))  # giờ báo cáo, mặc định UTC+7 (VN)
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
@@ -143,23 +144,33 @@ def to_float(value: object, default: float = 0.0) -> float:
     return default
 
 
-def okx_get(path: str, params: dict[str, object] | None = None) -> dict:
+def okx_get(path: str, params: dict[str, object] | None = None, attempts: int = 3) -> dict:
     query = urllib.parse.urlencode(params or {})
     url = f"{OKX_BASE_URL}{path}"
     if query:
         url = f"{url}?{query}"
-    request = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/json",
-            "User-Agent": "okx-coin-analysis-bot/1.0",
-        },
-    )
-    with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT) as response:
-        payload = json.loads(response.read().decode("utf-8"))
-    if payload.get("code") != "0":
-        raise RuntimeError(f"OKX API error {payload.get('code')}: {payload.get('msg')}")
-    return payload
+    # Retry CHỈ với lỗi mạng/timeout/HTTP (URLError/OSError). Lỗi API code!=0 (vd instId sai)
+    # ném ngay, không retry vô ích. HTTPError 429/5xx là subclass URLError nên vẫn được thử lại.
+    last_exc: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            request = urllib.request.Request(
+                url,
+                headers={
+                    "Accept": "application/json",
+                    "User-Agent": "okx-coin-analysis-bot/1.0",
+                },
+            )
+            with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            if payload.get("code") != "0":
+                raise RuntimeError(f"OKX API error {payload.get('code')}: {payload.get('msg')}")
+            return payload
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            last_exc = exc
+            if attempt < attempts - 1:
+                time.sleep(0.5 * (attempt + 1))
+    raise last_exc if last_exc else RuntimeError(f"okx_get failed: {path}")
 
 
 def fetch_top_instruments() -> list[str]:
@@ -168,11 +179,13 @@ def fetch_top_instruments() -> list[str]:
     suffix = f"-{QUOTE}-SWAP" if INST_TYPE == "SWAP" else f"-{QUOTE}"
 
     def volume_key(row: dict) -> float:
-        return max(
-            to_float(row.get("volCcy24h")),
-            to_float(row.get("vol24h")),
-            to_float(row.get("volCcyQuote24h")),
-        )
+        # Xếp hạng theo volume quy USDT cho nhất quán (tránh trộn đơn vị contracts/base/quote).
+        usdt_vol = to_float(row.get("volCcyQuote24h"))
+        if usdt_vol > 0:
+            return usdt_vol
+        last = to_float(row.get("last"))
+        base_vol = to_float(row.get("volCcy24h")) or to_float(row.get("vol24h"))
+        return base_vol * last
 
     instruments = [
         row
@@ -289,29 +302,47 @@ def pct_change(new: float, old: float) -> float:
     return (new / old - 1) * 100
 
 
-def build_score(candles: list[Candle]) -> Score | None:
-    if len(candles) < 80:
+IndicatorSeries = tuple
+
+
+def precompute_series(candles: list[Candle]):
+    """Tính TOÀN BỘ chuỗi EMA20/EMA50/RSI/ATR một lần (O(n)). Vì các chỉ báo này đều
+    causal (giá trị tại idx chỉ phụ thuộc dữ liệu tới idx), index vào series[idx] cho
+    KẾT QUẢ Y HỆT việc tính lại trên candles[:idx+1] — nhưng nhanh hơn n lần."""
+    closes = [c.close for c in candles]
+    return (ema(closes, 20), ema(closes, 50), rsi(closes, 14), atr(candles, 14))
+
+
+def build_score_at(
+    candles: list[Candle],
+    idx: int,
+    ema20_series: list[float | None],
+    ema50_series: list[float | None],
+    rsi_series: list[float | None],
+    atr_series: list[float | None],
+) -> Score | None:
+    """Chấm điểm tại nến `idx`, chỉ dùng dữ liệu tới idx (không nhìn tương lai)."""
+    if idx < 79 or idx >= len(candles):
         return None
 
-    closes = [c.close for c in candles]
-    volumes = [c.volume for c in candles]
-    ema20_series = ema(closes, 20)
-    ema50_series = ema(closes, 50)
-    rsi_series = rsi(closes, 14)
-    atr_series = atr(candles, 14)
-
-    close = closes[-1]
-    ema20 = latest_number(ema20_series, close)
-    ema50 = latest_number(ema50_series, close)
-    rsi14 = latest_number(rsi_series, 50.0)
-    atr14 = latest_number(atr_series, close * 0.01)
+    close = candles[idx].close
+    ema20 = ema20_series[idx] if ema20_series[idx] is not None else close
+    ema50 = ema50_series[idx] if ema50_series[idx] is not None else close
+    rsi14 = rsi_series[idx] if rsi_series[idx] is not None else 50.0
+    atr14 = atr_series[idx] if atr_series[idx] is not None else close * 0.01
     atr_pct = (atr14 / close) * 100 if close else 0.0
-    vol_avg = statistics.fmean(volumes[-21:-1]) if len(volumes) >= 22 else statistics.fmean(volumes)
-    volume_ratio = volumes[-1] / vol_avg if vol_avg > 0 else 1.0
-    momentum_3 = pct_change(closes[-1], closes[-4])
-    momentum_12 = pct_change(closes[-1], closes[-13])
-    range_high = max(c.high for c in candles[-50:])
-    range_low = min(c.low for c in candles[-50:])
+
+    if idx >= 21:
+        vol_seg = [candles[j].volume for j in range(idx - 20, idx)]
+    else:
+        vol_seg = [candles[j].volume for j in range(0, idx)]
+    vol_avg = statistics.fmean(vol_seg) if vol_seg else candles[idx].volume
+    volume_ratio = candles[idx].volume / vol_avg if vol_avg > 0 else 1.0
+    momentum_3 = pct_change(close, candles[idx - 3].close)
+    momentum_12 = pct_change(close, candles[idx - 12].close)
+    seg = candles[max(0, idx - 49): idx + 1]
+    range_high = max(c.high for c in seg)
+    range_low = min(c.low for c in seg)
     range_position = (close - range_low) / (range_high - range_low) if range_high > range_low else 0.5
 
     long_score = 0.0
@@ -326,7 +357,7 @@ def build_score(candles: list[Candle]) -> Score | None:
         short_score += 2.2
         short_reasons.append("Trend giảm: giá nằm dưới EMA20 và EMA20 nằm dưới EMA50")
 
-    ema20_prev = ema20_series[-6] if len(ema20_series) >= 6 else None
+    ema20_prev = ema20_series[idx - 5] if idx - 5 >= 0 else None
     if ema20_prev:
         ema_slope = pct_change(ema20, ema20_prev)
         if ema_slope > 0.15:
@@ -399,6 +430,14 @@ def build_score(candles: list[Candle]) -> Score | None:
     )
 
 
+def build_score(candles: list[Candle]) -> Score | None:
+    """Chấm điểm tại nến cuối (tín hiệu 'live'). Wrapper quanh build_score_at."""
+    if len(candles) < 80:
+        return None
+    series = precompute_series(candles)
+    return build_score_at(candles, len(candles) - 1, *series)
+
+
 def choose_side(score: Score) -> str:
     if score.long_score >= score.short_score + MIN_SCORE_EDGE:
         return "LONG"
@@ -453,23 +492,7 @@ def simulate_trade(
     return pct_change(entry, final_close)
 
 
-def backtest_side(candles: list[Candle], side: str) -> BacktestResult:
-    returns: list[float] = []
-    start = 80
-    last_entry = len(candles) - BACKTEST_HORIZON - 1
-    if last_entry <= start:
-        return BacktestResult(win_rate=0.0, trades=0, avg_return_pct=0.0)
-
-    for entry_index in range(start, last_entry):
-        history = candles[: entry_index + 1]
-        score = build_score(history)
-        if score is None:
-            continue
-        if choose_side(score) != side:
-            continue
-        atr_value = score.atr
-        returns.append(simulate_trade(candles, entry_index, side, atr_value, BACKTEST_HORIZON))
-
+def _bt_result(returns: list[float]) -> BacktestResult:
     if not returns:
         return BacktestResult(win_rate=0.0, trades=0, avg_return_pct=0.0)
     wins = sum(1 for value in returns if value > 0)
@@ -478,6 +501,34 @@ def backtest_side(candles: list[Candle], side: str) -> BacktestResult:
         trades=len(returns),
         avg_return_pct=statistics.fmean(returns),
     )
+
+
+def backtest_both(candles: list[Candle], series) -> tuple[BacktestResult, BacktestResult]:
+    """Duyệt MỘT lượt qua lịch sử, chấm điểm 1 lần/nến (dùng chung cho cả 2 phía).
+    Sau mỗi lệnh khớp tín hiệu, nhảy qua `horizon` nến (COOLDOWN) → các mẫu KHÔNG
+    chồng lấn, win rate phản ánh đúng số tín hiệu độc lập thay vì bị thổi phồng."""
+    long_returns: list[float] = []
+    short_returns: list[float] = []
+    start = 80
+    last_entry = len(candles) - BACKTEST_HORIZON - 1
+    if last_entry <= start:
+        return _bt_result([]), _bt_result([])
+
+    entry_index = start
+    while entry_index < last_entry:
+        score = build_score_at(candles, entry_index, *series)
+        if score is None:
+            entry_index += 1
+            continue
+        side = choose_side(score)
+        if side == "NEUTRAL":
+            entry_index += 1
+            continue
+        ret = simulate_trade(candles, entry_index, side, score.atr, BACKTEST_HORIZON)
+        (long_returns if side == "LONG" else short_returns).append(ret)
+        entry_index += BACKTEST_HORIZON  # cooldown: mẫu không chồng lấn
+
+    return _bt_result(long_returns), _bt_result(short_returns)
 
 
 def strength_label(confidence: float, trades: int) -> str:
@@ -494,12 +545,14 @@ def strength_label(confidence: float, trades: int) -> str:
 
 def analyze_instrument(inst_id: str) -> AnalysisResult | None:
     candles = fetch_candles(inst_id)
-    score = build_score(candles)
+    if len(candles) < 80:
+        return None
+    series = precompute_series(candles)
+    score = build_score_at(candles, len(candles) - 1, *series)
     if score is None:
         return None
 
-    long_bt = backtest_side(candles, "LONG")
-    short_bt = backtest_side(candles, "SHORT")
+    long_bt, short_bt = backtest_both(candles, series)
     side = choose_side(score)
 
     if side == "NEUTRAL":
@@ -617,7 +670,7 @@ def chunk_text(text: str, max_len: int = 3900) -> Iterable[str]:
 
 
 def build_report(results: list[AnalysisResult], errors: list[str]) -> str:
-    now = datetime.now(timezone.utc).astimezone()
+    now = datetime.now(timezone(timedelta(hours=REPORT_TZ_OFFSET)))
     lines = [
         "🎯 OKX SIGNAL SHOW",
         f"Top {REPORT_TOP_N} coin đáng soi nhất lúc {now:%H:%M}",
