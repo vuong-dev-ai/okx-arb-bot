@@ -6,7 +6,6 @@ Required:
 
 Optional:
   GATEWAY_ARB_URL         — mặc định http://localhost:5000
-  GATEWAY_TREND_URL       — mặc định http://localhost:5001
   GATEWAY_DAILY_HOUR      — giờ chạy daily summary (VN time), mặc định 22
   GATEWAY_ALERT_INTERVAL  — giây giữa các vòng poll alert, mặc định 300
   GATEWAY_DD_THRESHOLD    — % drawdown để alert, mặc định -5
@@ -21,10 +20,9 @@ from dotenv import load_dotenv
 log = logging.getLogger(__name__)
 
 _BASE = os.path.dirname(os.path.abspath(__file__))
-# Cho phép share .env với 2 bot
+# Cho phép share .env với arb bot
 _ENV_CANDIDATES = [
     os.path.join(_BASE, '.env'),
-    os.path.join(os.path.dirname(_BASE), 'okx-trending-bot', '.env'),
     os.path.join(os.path.dirname(_BASE), 'okx-arb-bot', '.env'),
 ]
 for p in _ENV_CANDIDATES:
@@ -50,7 +48,6 @@ for s in _raw_ids.split(','):
 
 BOT_ENDPOINTS = {
     'arb':   os.getenv("GATEWAY_ARB_URL",   "http://localhost:5000").rstrip('/'),
-    'trend': os.getenv("GATEWAY_TREND_URL", "http://localhost:5001").rstrip('/'),
 }
 
 DAILY_HOUR        = int(os.getenv("GATEWAY_DAILY_HOUR", "22"))

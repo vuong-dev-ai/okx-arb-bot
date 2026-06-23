@@ -1,4 +1,4 @@
-"""HTTP clients cho 2 bot Flask API (arb @ :5000, trend @ :5001)."""
+"""HTTP clients cho arb bot Flask API (@ :5000)."""
 import logging
 from typing import Optional
 
@@ -87,11 +87,3 @@ async def close_all(bot: str) -> Optional[dict]:
 
 async def sync(bot: str) -> Optional[dict]:
     return await post_json(bot, "/api/sync")
-
-
-async def run_backtest(candles: int = 600, balance: float = 10000.0) -> Optional[dict]:
-    return await post_json('trend', '/api/backtest/run', {'candles': candles, 'balance': balance})
-
-
-async def backtest_status() -> Optional[dict]:
-    return await get_json('trend', '/api/backtest')

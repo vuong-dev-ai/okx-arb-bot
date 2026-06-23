@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Deploy AN TOÀN bản sửa lớn + fix "market đóng cửa" lên server DEMO.
-# Đẩy TOÀN BỘ code 2 bot + telegram_gateway, NHƯNG loại trừ mọi file trạng thái
+# Đẩy code arb bot + telegram_gateway, NHƯNG loại trừ mọi file trạng thái
 # (state.json / .env / analytics.db* / bot.log / pnl_log.xlsx / docs data) để
 # KHÔNG ghi đè vị thế, key, lịch sử trade trên server.
 #
 # Cách dùng:
 #   ./deploy_demo.sh <user>@134.185.80.111 [REMOTE_DIR]
-#   REMOTE_DIR mặc định: /home/ubuntu (thư mục THẬT chứa okx-arb-bot/, okx-trending-bot/)
+#   REMOTE_DIR mặc định: /home/ubuntu (thư mục THẬT chứa okx-arb-bot/)
 #
 # VD: ./deploy_demo.sh ubuntu@134.185.80.111
 set -euo pipefail
@@ -22,7 +22,7 @@ echo "    (loại trừ: state.json, .env, *.db*, *.log, pnl_log.xlsx, __pycache
 echo "==> [1/5] Backup state.json + .env trên server..."
 ssh "$TARGET" "cd '$REMOTE_DIR' 2>/dev/null && \
   ts=\$(date +%Y%m%d-%H%M%S) && \
-  for f in okx-arb-bot/state.json okx-trending-bot/state.json okx-arb-bot/.env okx-trending-bot/.env; do \
+  for f in okx-arb-bot/state.json okx-arb-bot/.env; do \
     [ -f \"\$f\" ] && cp \"\$f\" \"\$f.bak-\$ts\" && echo \"   backup \$f.bak-\$ts\"; \
   done; true"
 
@@ -41,28 +41,27 @@ tar -C "$LOCAL_DIR" \
     --exclude='bot-docs/equity_data.json' \
     --exclude='*.bak-*' \
     --exclude='deploy_demo.sh' \
-    -czf - okx-arb-bot okx-trending-bot telegram_gateway 2>/dev/null \
+    -czf - okx-arb-bot telegram_gateway 2>/dev/null \
   | ssh "$TARGET" "mkdir -p '$REMOTE_DIR' && tar -C '$REMOTE_DIR' -xzf -"
 echo "   code đã giải nén."
 
 # 3) Đảm bảo .env có các biến mới (CHỈ THÊM nếu thiếu, không sửa giá trị sẵn có)
 echo "==> [3/5] Bổ sung env mới nếu thiếu (giữ nguyên giá trị cũ)..."
-ssh "$TARGET" "cd '$REMOTE_DIR' && for d in okx-arb-bot okx-trending-bot; do \
+ssh "$TARGET" "cd '$REMOTE_DIR' && for d in okx-arb-bot; do \
   env=\"\$d/.env\"; [ -f \"\$env\" ] || { echo \"   ⚠ THIẾU \$env — bỏ qua\"; continue; }; \
   grep -q '^AUTO_START_BOT='        \"\$env\" || echo 'AUTO_START_BOT=true'   >> \"\$env\"; \
   done; \
   grep -q '^ARB_CAPITAL_FRACTION='   okx-arb-bot/.env      2>/dev/null || echo 'ARB_CAPITAL_FRACTION=0.5'   >> okx-arb-bot/.env; \
-  grep -q '^TREND_CAPITAL_FRACTION=' okx-trending-bot/.env 2>/dev/null || echo 'TREND_CAPITAL_FRACTION=0.5' >> okx-trending-bot/.env; \
   echo '   env OK'"
 
 # 4) Restart service
 echo "==> [4/5] Restart systemd..."
-ssh "$TARGET" "sudo systemctl restart okx-arb okx-trending && sleep 4 && \
-  systemctl is-active okx-arb okx-trending || true"
+ssh "$TARGET" "sudo systemctl restart okx-arb && sleep 4 && \
+  systemctl is-active okx-arb || true"
 
 # 5) Health check
 echo "==> [5/5] Health check..."
-ssh "$TARGET" "curl -s localhost:5000/api/health; echo; curl -s localhost:5001/api/health; echo" || true
+ssh "$TARGET" "curl -s localhost:5000/api/health; echo" || true
 
 echo "==> XONG. Kiểm tra: state.json KHÔNG bị reset, /api/health = running:true, không alert CRITICAL lạ."
-echo "    Nếu cần bật bot thủ công (không bật AUTO_START): ssh $TARGET 'curl -X POST localhost:5000/api/start; curl -X POST localhost:5001/api/start'"
+echo "    Nếu cần bật bot thủ công (không bật AUTO_START): ssh $TARGET 'curl -X POST localhost:5000/api/start'"

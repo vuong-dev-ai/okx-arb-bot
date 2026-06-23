@@ -233,6 +233,19 @@ def get_swap_info(inst_id):
     return None, None, None
 
 
+def get_spot_info(inst_id):
+    """minSz, lotSz của một spot instrument. Trả (None, None) nếu API fail."""
+    resp = _retry(lambda: public_api.get_instruments(instType="SPOT", instId=inst_id),
+                  attempts=3, base_delay=0.3, what=f'spot instruments {inst_id}')
+    try:
+        if resp and resp.get('code') == '0' and resp.get('data'):
+            d = resp['data'][0]
+            return float(d['minSz']), float(d['lotSz'])
+    except Exception as e:
+        log.error(f"Parse spot instrument {inst_id}: {e}")
+    return None, None
+
+
 def get_instrument_state(inst_id):
     """Trạng thái giao dịch của instrument trên OKX:
       'live'      → giao dịch được (đặt lệnh market OK);
@@ -442,6 +455,12 @@ def sell_spot(spot_id, amount):
     if avail <= 0:
         log.warning(f"  [{ccy}] Spot balance = 0, bỏ qua sell {spot_id}")
         return True  # không có gì để bán, coi như đã đóng
+    # Dust DƯỚI minSz của sàn → KHÔNG thể đặt lệnh (51020). Coi như đã đóng để
+    # tránh kẹt vòng lặp retry vĩnh viễn (vd: còn 0.000517 TON trong khi minSz=1).
+    min_sz, _ = get_spot_info(spot_id)
+    if min_sz is not None and avail < min_sz:
+        log.warning(f"  [{ccy}] Spot còn {avail:.8f} < minSz {min_sz:g} → dust không bán được, coi như đã đóng {spot_id}")
+        return True
     # Co lại số lượng nếu balance thực < amount yêu cầu (chênh do fee/dust)
     if avail < amount:
         log.info(f"  [{ccy}] Spot avail={avail:.8f} < cần {amount:.8f} → bán {avail:.8f}")

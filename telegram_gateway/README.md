@@ -1,12 +1,12 @@
 # Telegram Gateway
 
-Một process Telegram duy nhất kết nối với cả 2 bot OKX (`okx-arb-bot` :5000, `okx-trending-bot` :5001) qua Flask HTTP API.
+Một process Telegram duy nhất kết nối với arb bot OKX (`okx-arb-bot` :5000) qua Flask HTTP API.
 
 ## Tại sao cần gateway?
 
-Telegram chỉ cho phép **1 process polling** trên mỗi bot token. Hai bot trading chạy song song không thể cùng listen — gateway giải quyết bằng cách:
-- Push notifications: mỗi bot vẫn tự gửi qua `notifier.py` (chỉ POST, không polling) — animated GIF / sticker / dice.
-- Pull commands: chỉ gateway polling, forward command tới HTTP API của bot tương ứng.
+Telegram chỉ cho phép **1 process polling** trên mỗi bot token. Bot trading dùng `notifier.py` để push (chỉ POST) nên không thể đồng thời tự polling lệnh — gateway giải quyết bằng cách:
+- Push notifications: bot vẫn tự gửi qua `notifier.py` (chỉ POST, không polling) — animated GIF / sticker / dice.
+- Pull commands: chỉ gateway polling, forward command tới HTTP API của bot.
 
 ## Setup
 
@@ -22,7 +22,6 @@ TELEGRAM_TOKEN=123456:ABC...
 TELEGRAM_ALLOWED_CHAT_IDS=11111111,22222222
 # Optional override
 GATEWAY_ARB_URL=http://localhost:5000
-GATEWAY_TREND_URL=http://localhost:5001
 GATEWAY_DAILY_HOUR=22
 GATEWAY_ALERT_INTERVAL=300
 GATEWAY_DD_THRESHOLD=-5
@@ -37,15 +36,12 @@ GATEWAY_PROFIT_THRESHOLD=10
 python gateway.py
 ```
 
-3 process chạy song song:
+2 process chạy song song:
 ```powershell
 # Cửa sổ 1
 cd D:\PYTHON\okx-arb-bot && python app.py
 
 # Cửa sổ 2
-cd D:\PYTHON\okx-trending-bot && python app.py
-
-# Cửa sổ 3
 cd D:\PYTHON\telegram_gateway && python gateway.py
 ```
 
@@ -55,19 +51,18 @@ cd D:\PYTHON\telegram_gateway && python gateway.py
 |---|---|
 | `/start`, `/help` | Giới thiệu, danh sách lệnh |
 | `/menu` | Bảng nút inline |
-| `/ping` | Kiểm tra gateway + 2 bot |
-| `/status [trend\|arb\|all]` | Tóm tắt bot + vị thế |
-| `/positions [trend\|arb]` | Chi tiết vị thế |
+| `/ping` | Kiểm tra gateway + bot |
+| `/status` | Tóm tắt bot + vị thế |
+| `/positions` | Chi tiết vị thế |
 | `/balance` | USDT khả dụng |
-| `/stats [trend\|arb]` | Win rate, profit factor, top coins |
-| `/equity [trend\|arb]` | Biểu đồ equity (PNG qua quickchart.io) |
+| `/stats` | Win rate, profit factor, top coins |
+| `/equity` | Biểu đồ equity (PNG qua quickchart.io) |
 | `/daily` | Báo cáo PnL hôm nay |
 | `/summary` | Báo cáo 7 ngày |
-| `/start_trend`, `/stop_trend` | Điều khiển trending bot |
 | `/start_arb`, `/stop_arb` | Điều khiển arb bot |
-| `/close <bot> <coin>` | VD `/close trend BTC` |
-| `/close_all <bot>` | Đóng tất cả vị thế của bot đó |
-| `/sync <bot>` | Reconcile với OKX |
+| `/close <coin>` | VD `/close BTC` |
+| `/close_all` | Đóng tất cả vị thế |
+| `/sync` | Reconcile với OKX |
 
 ## Scheduler
 
@@ -102,7 +97,7 @@ Lấy `file_id` của sticker: gửi sticker đó cho [@RawDataBot](https://t.me
 
 - Chỉ `TELEGRAM_ALLOWED_CHAT_IDS` mới gọi được command — mọi handler có auth decorator.
 - Mọi chat_id ngoài whitelist nhận phản hồi "⛔ không có quyền".
-- Gateway chỉ gọi HTTP localhost của 2 bot — không expose ra ngoài. Nếu chạy trên server, đóng port 5000/5001 trên firewall.
+- Gateway chỉ gọi HTTP localhost của bot — không expose ra ngoài. Nếu chạy trên server, đóng port 5000 trên firewall.
 
 ## Troubleshooting
 

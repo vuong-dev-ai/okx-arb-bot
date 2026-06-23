@@ -1,4 +1,4 @@
-"""Telegram Gateway — 1 process duy nhất nói chuyện với cả 2 bot OKX.
+"""Telegram Gateway — 1 process duy nhất nói chuyện với arb bot OKX.
 
 Chạy:  python gateway.py
 """
@@ -73,16 +73,14 @@ def build_app() -> Application:
     h(CommandHandler('equity',       commands.cmd_equity))
     h(CommandHandler('daily',        commands.cmd_daily))
     h(CommandHandler('summary',      commands.cmd_summary))
+    h(CommandHandler('signals',      commands.cmd_signals))
 
-    h(CommandHandler('start_trend',  commands.cmd_start_trend))
-    h(CommandHandler('stop_trend',   commands.cmd_stop_trend))
     h(CommandHandler('start_arb',    commands.cmd_start_arb))
     h(CommandHandler('stop_arb',     commands.cmd_stop_arb))
 
     h(CommandHandler('close',        commands.cmd_close))
     h(CommandHandler('close_all',    commands.cmd_close_all))
     h(CommandHandler('sync',         commands.cmd_sync))
-    h(CommandHandler('backtest',     commands.cmd_backtest))
 
     # ─── Inline keyboard ───
     h(CallbackQueryHandler(commands.cb_button))

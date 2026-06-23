@@ -17,7 +17,7 @@ Dùng:
   python bt_research.py baseline         # chạy config hiện tại (sanity check)
   python bt_research.py grid             # sweep, ghi grid_results.json
 """
-import os, sys, time, json, pickle, math, argparse, datetime as dt
+import os, sys, time, json, pickle, math, argparse
 from typing import Optional
 
 import numpy as np

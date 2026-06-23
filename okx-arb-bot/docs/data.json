@@ -1,92 +1,55 @@
 {
-  "updated_at": "05/06/2026 07:07",
-  "usdt_balance": 42958.79886387952,
-  "total_live_pnl": 165.8615,
-  "positions": [
-    {
-      "coin": "BTC",
-      "entry_price": 64001.07,
-      "current_price": 63743.3,
-      "usdt_in": 11693.0,
-      "funding_pnl": 87.3443,
-      "price_pnl": -0.0256,
-      "total_pnl": 87.3187,
-      "pct": 0.747,
-      "n_payments": 2,
-      "open_time": "04/06 22:36"
-    },
-    {
-      "coin": "DOT",
-      "entry_price": 1.07,
-      "current_price": 1.04,
-      "usdt_in": 9585.5,
-      "funding_pnl": 48.4212,
-      "price_pnl": -0.1525,
-      "total_pnl": 48.2688,
-      "pct": 0.504,
-      "n_payments": 2,
-      "open_time": "04/06 22:36"
-    },
-    {
-      "coin": "SUI",
-      "entry_price": 0.8,
-      "current_price": 0.77,
-      "usdt_in": 7851.8,
-      "funding_pnl": 30.7688,
-      "price_pnl": -0.4948,
-      "total_pnl": 30.274,
-      "pct": 0.386,
-      "n_payments": 2,
-      "open_time": "04/06 22:36"
-    }
-  ],
+  "updated_at": "09/06/2026 02:48",
+  "usdt_balance": 49030.181087690275,
+  "total_live_pnl": 0.0,
+  "positions": [],
   "top_rates": [
     {
       "coin": "BTC",
-      "rate": 0.00375,
-      "apy": 410.625,
+      "rate": 0.0001,
+      "apy": 10.950000000000001,
       "next": 0.0
     },
     {
-      "coin": "DOT",
-      "rate": 0.0025936051635739,
-      "apy": 283.9997654113421,
-      "next": 0.0
-    },
-    {
-      "coin": "SUI",
-      "rate": 0.0020448636126803,
-      "apy": 223.9125655884928,
+      "coin": "ADA",
+      "rate": 0.0001,
+      "apy": 10.950000000000001,
       "next": 0.0
     },
     {
       "coin": "LTC",
-      "rate": 0.0004127850947695,
-      "apy": 45.19996787726025,
+      "rate": 0.0001,
+      "apy": 10.950000000000001,
       "next": 0.0
     },
     {
       "coin": "BNB",
-      "rate": 0.0001232606399895,
-      "apy": 13.497040078850247,
+      "rate": 5.46564303356e-05,
+      "apy": 5.9848791217482,
       "next": 0.0
     },
     {
-      "coin": "PEPE",
-      "rate": 2.5e-05,
-      "apy": 2.7375000000000003,
-      "next": 0.0
-    },
-    {
-      "coin": "ATOM",
-      "rate": 1.25e-05,
-      "apy": 1.3687500000000001,
+      "coin": "ARB",
+      "rate": 5e-05,
+      "apy": 5.4750000000000005,
       "next": 0.0
     },
     {
       "coin": "TRX",
-      "rate": -0.0003153839944661,
-      "apy": -34.53454739403795,
+      "rate": 5e-05,
+      "apy": 5.4750000000000005,
+      "next": 0.0
+    },
+    {
+      "coin": "BCH",
+      "rate": 5e-05,
+      "apy": 5.4750000000000005,
+      "next": 0.0
+    },
+    {
+      "coin": "PEPE",
+      "rate": 5e-05,
+      "apy": 5.4750000000000005,
       "next": 0.0
     }
   ],

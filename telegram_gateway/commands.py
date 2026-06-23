@@ -1,9 +1,12 @@
 """Async command handlers cho gateway."""
+import asyncio
 import json
 import logging
+import sys
 import urllib.parse
 from datetime import datetime
 from functools import wraps
+from pathlib import Path
 from typing import Optional
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -43,7 +46,7 @@ def auth(handler):
 
 
 # ════════════════════ HELPERS ════════════════════
-_BOTS = ('trend', 'arb')
+_BOTS = ('arb',)
 
 
 def _bot_arg(args, default: Optional[str] = None) -> Optional[str]:
@@ -60,6 +63,51 @@ def _bot_arg(args, default: Optional[str] = None) -> Optional[str]:
 def _esc(s) -> str:
     s = '' if s is None else str(s)
     return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+
+def _plain_chunks(text: str, max_len: int = 3900):
+    remaining = text
+    while len(remaining) > max_len:
+        cut = remaining.rfind("\n", 0, max_len)
+        if cut < 1000:
+            cut = max_len
+        yield remaining[:cut].strip()
+        remaining = remaining[cut:].strip()
+    if remaining:
+        yield remaining
+
+
+def _signal_bot_module():
+    bot_dir = Path(__file__).resolve().parents[1]
+    bot_dir_s = str(bot_dir)
+    if bot_dir_s not in sys.path:
+        sys.path.insert(0, bot_dir_s)
+    import okx_coin_analysis_bot
+
+    return okx_coin_analysis_bot
+
+
+async def _build_signal_report() -> str:
+    signal_bot = _signal_bot_module()
+    return await asyncio.to_thread(signal_bot.generate_report)
+
+
+async def _reply_signal_report(message):
+    waiting = await message.reply_text("🔎 Đang soi chart OKX... chờ mình bắt 3 tín hiệu sáng nhất.")
+    try:
+        report = await _build_signal_report()
+    except Exception as e:
+        log.exception(f"Build signal report fail: {e}")
+        await waiting.edit_text(f"⚠ Không tạo được báo cáo tín hiệu: {e}")
+        return
+
+    chunks = list(_plain_chunks(report))
+    if not chunks:
+        await waiting.edit_text("Chưa có tín hiệu đủ dữ liệu.")
+        return
+    await waiting.edit_text(chunks[0])
+    for chunk in chunks[1:]:
+        await message.reply_text(chunk)
 
 
 def _format_status(bot: str, data: dict) -> str:
@@ -155,7 +203,7 @@ def _equity_chart_url(points: list, title: str) -> Optional[str]:
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     msg = (
         "👋 <b>OKX Bot Gateway</b>\n"
-        "Quản lý cả 2 bot (arb + trend) trong 1 nơi.\n\n"
+        "Quản lý arb bot.\n\n"
         "Gõ /help để xem danh sách lệnh, hoặc /menu để mở bảng nút.\n"
         f"Whitelist: <code>{len(ALLOWED_CHAT_IDS)}</code> chat IDs được cấp quyền."
     )
@@ -167,22 +215,20 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = (
         "📖 <b>Lệnh khả dụng</b>\n\n"
         "<b>📊 Xem trạng thái</b>\n"
-        "/status [trend|arb|all] — bot + vị thế\n"
-        "/positions [trend|arb] — chi tiết vị thế\n"
+        "/status — bot + vị thế\n"
+        "/positions — chi tiết vị thế\n"
         "/balance — USDT khả dụng\n"
-        "/stats [trend|arb] — win rate, PF, net PnL, fee\n"
-        "/equity [trend|arb] — biểu đồ equity (net)\n"
+        "/stats — win rate, PF, net PnL, fee\n"
+        "/equity — biểu đồ equity (net)\n"
         "/daily — báo cáo PnL hôm nay (net, sau fee)\n"
         "/summary — báo cáo 7 ngày + fee breakdown\n\n"
+        "<b>📌 Tín hiệu</b>\n"
+        "/signals — top 3 coin Long/Short tiềm năng\n\n"
         "<b>⚙ Điều khiển</b>\n"
-        "/start_trend · /stop_trend\n"
         "/start_arb · /stop_arb\n"
-        "/close &lt;bot&gt; &lt;coin&gt; — VD <code>/close trend BTC</code>\n"
-        "/close_all &lt;bot&gt;\n"
-        "/sync &lt;bot&gt; — reconcile với OKX\n\n"
-        "<b>🔬 Backtest (trend bot)</b>\n"
-        "/backtest [candles] [balance] — chạy backtest mới\n"
-        "/backtest status — xem kết quả\n\n"
+        "/close &lt;coin&gt; — VD <code>/close BTC</code>\n"
+        "/close_all\n"
+        "/sync — reconcile với OKX\n\n"
         "<b>🔧 Khác</b>\n"
         "/menu — bảng nút inline\n"
         "/ping — check gateway còn sống"
@@ -193,24 +239,24 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 @auth
 async def cmd_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     kb = [
-        [InlineKeyboardButton("📈 Trend status",  callback_data="status:trend"),
-         InlineKeyboardButton("📉 Arb status",    callback_data="status:arb")],
-        [InlineKeyboardButton("📊 Trend stats",   callback_data="stats:trend"),
+        [InlineKeyboardButton("🎯 Top 3 signals", callback_data="signals:okx")],
+        [InlineKeyboardButton("📉 Arb status",    callback_data="status:arb"),
          InlineKeyboardButton("📊 Arb stats",     callback_data="stats:arb")],
-        [InlineKeyboardButton("💹 Trend equity",  callback_data="equity:trend"),
-         InlineKeyboardButton("💹 Arb equity",    callback_data="equity:arb")],
-        [InlineKeyboardButton("▶ Start trend",    callback_data="start:trend"),
-         InlineKeyboardButton("⏸ Stop trend",     callback_data="stop:trend")],
+        [InlineKeyboardButton("💹 Arb equity",    callback_data="equity:arb"),
+         InlineKeyboardButton("🔄 Sync arb",      callback_data="sync:arb")],
         [InlineKeyboardButton("▶ Start arb",      callback_data="start:arb"),
          InlineKeyboardButton("⏸ Stop arb",       callback_data="stop:arb")],
-        [InlineKeyboardButton("🔄 Sync trend",    callback_data="sync:trend"),
-         InlineKeyboardButton("🔄 Sync arb",      callback_data="sync:arb")],
     ]
     await update.message.reply_text(
         "<b>Bảng điều khiển</b>",
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(kb),
     )
+
+
+@auth
+async def cmd_signals(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await _reply_signal_report(update.effective_message)
 
 
 @auth
@@ -283,9 +329,7 @@ async def cmd_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 @auth
 async def cmd_equity(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    bot = _bot_arg(ctx.args, default='trend') or 'trend'
-    if bot == 'all':
-        bot = 'trend'
+    bot = 'arb'
     data = await clients.analytics(bot)
     points = (data or {}).get('equity') or []
     if not points:
@@ -327,10 +371,6 @@ async def _ctrl(update: Update, action: str, bot: str):
 
 
 @auth
-async def cmd_start_trend(update, ctx): await _ctrl(update, 'start', 'trend')
-@auth
-async def cmd_stop_trend(update, ctx):  await _ctrl(update, 'stop',  'trend')
-@auth
 async def cmd_start_arb(update, ctx):   await _ctrl(update, 'start', 'arb')
 @auth
 async def cmd_stop_arb(update, ctx):    await _ctrl(update, 'stop',  'arb')
@@ -338,18 +378,15 @@ async def cmd_stop_arb(update, ctx):    await _ctrl(update, 'stop',  'arb')
 
 @auth
 async def cmd_close(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if len(ctx.args) < 2:
+    if not ctx.args:
         await update.message.reply_text(
-            "Cú pháp: <code>/close &lt;trend|arb&gt; &lt;COIN&gt;</code>\n"
-            "VD: <code>/close trend BTC</code>",
+            "Cú pháp: <code>/close &lt;COIN&gt;</code>\n"
+            "VD: <code>/close BTC</code>",
             parse_mode=ParseMode.HTML,
         )
         return
-    bot = ctx.args[0].lower().strip()
-    if bot not in _BOTS:
-        await update.message.reply_text(f"Bot không hợp lệ: {bot} (chỉ: trend, arb)")
-        return
-    coin = ctx.args[1].upper().strip()
+    bot = 'arb'
+    coin = ctx.args[0].upper().strip()
     r = await clients.close_coin(bot, coin)
     if not r:
         await update.message.reply_text(f"⚠ {bot.upper()} không phản hồi")
@@ -371,14 +408,7 @@ async def cmd_close(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 @auth
 async def cmd_close_all(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not ctx.args:
-        await update.message.reply_text("Cú pháp: <code>/close_all &lt;trend|arb&gt;</code>",
-                                        parse_mode=ParseMode.HTML)
-        return
-    bot = ctx.args[0].lower().strip()
-    if bot not in _BOTS:
-        await update.message.reply_text(f"Bot không hợp lệ: {bot}")
-        return
+    bot = 'arb'
     r = await clients.close_all(bot)
     if not r:
         await update.message.reply_text(f"⚠ {bot.upper()} không phản hồi")
@@ -398,86 +428,6 @@ async def cmd_sync(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     targets = _BOTS if bot == 'all' else (bot,)
     for b in targets:
         await _ctrl(update, 'sync', b)
-
-
-@auth
-async def cmd_backtest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """
-    /backtest               — chạy backtest mặc định (600 nến, $10,000)
-    /backtest status        — xem trạng thái / kết quả backtest đang chạy
-    /backtest 300 5000      — 300 nến, vốn $5,000
-    """
-    args = ctx.args or []
-
-    # /backtest status
-    if args and args[0].lower() == 'status':
-        d = await clients.backtest_status()
-        if not d:
-            await update.message.reply_text("⚠ Trend bot không phản hồi")
-            return
-        status = d.get('status', 'unknown')
-        prog   = d.get('progress')
-        result = d.get('result')
-        if status == 'running':
-            pct = 0
-            label = 'Đang chạy...'
-            if prog and prog.get('total', 0) > 0:
-                pct = int(prog['done'] / prog['total'] * 100)
-                stage = {'fetch': 'Tải data', 'simulate': 'Simulation'}.get(prog.get('stage', ''), prog.get('stage', ''))
-                label = f"{stage}: {prog['done']}/{prog['total']} ({pct}%)"
-            await update.message.reply_text(
-                f"⏳ <b>Backtest đang chạy</b>\n{label}",
-                parse_mode=ParseMode.HTML
-            )
-        elif status == 'done' and result:
-            r = result
-            p = r.get('params', {})
-            days = round((p.get('total_bars', 0) * 4) / 24)
-            net_sign = '+' if r.get('roi_pct', 0) >= 0 else ''
-            text = (
-                f"✅ <b>Backtest xong</b> · {days} ngày · ${p.get('initial_balance', 10000):,.0f} vốn\n\n"
-                f"Trades: {r.get('n_trades', 0)} · Win: {r.get('win_rate', 0)}%\n"
-                f"ROI: <b>{net_sign}{r.get('roi_pct', 0)}%</b> · PF: {r.get('profit_factor', 0)}\n"
-                f"Max DD: {r.get('max_drawdown', 0)}% · Sharpe: {r.get('sharpe', 0)}\n"
-                f"Expectancy: ${r.get('expectancy', 0):.2f}/trade"
-            )
-            await update.message.reply_text(text, parse_mode=ParseMode.HTML)
-        elif status == 'error':
-            await update.message.reply_text(
-                f"❌ Backtest lỗi: {_esc(d.get('error', '?'))}",
-                parse_mode=ParseMode.HTML
-            )
-        else:
-            await update.message.reply_text(f"Status: {_esc(status)} (chưa có kết quả)")
-        return
-
-    # /backtest [candles] [balance]
-    candles = 600
-    balance = 10000.0
-    try:
-        if len(args) >= 1: candles = int(args[0])
-        if len(args) >= 2: balance = float(args[1])
-    except ValueError:
-        await update.message.reply_text(
-            "Cú pháp: <code>/backtest [candles] [balance]</code>\n"
-            "VD: <code>/backtest 300 5000</code> hoặc <code>/backtest status</code>",
-            parse_mode=ParseMode.HTML
-        )
-        return
-
-    days = round(candles * 4 / 24)
-    r = await clients.run_backtest(candles=candles, balance=balance)
-    if not r:
-        await update.message.reply_text("⚠ Trend bot không phản hồi")
-        return
-    if r.get('ok'):
-        await update.message.reply_text(
-            f"⏳ <b>Backtest bắt đầu</b> · {days} ngày · ${balance:,.0f} vốn\n"
-            f"Dùng <code>/backtest status</code> để xem kết quả.",
-            parse_mode=ParseMode.HTML
-        )
-    else:
-        await update.message.reply_text(f"⚠ {_esc(r.get('msg', 'fail'))}")
 
 
 @auth
@@ -546,7 +496,9 @@ async def cb_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         action, bot = q.data.split(':', 1)
     except ValueError:
         return
-    if action == 'status':
+    if action == 'signals':
+        await _reply_signal_report(q.message)
+    elif action == 'status':
         data = await clients.status(bot)
         await q.message.reply_text(_format_status(bot, data), parse_mode=ParseMode.HTML)
     elif action == 'stats':
@@ -569,10 +521,10 @@ async def cb_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # Track alert state để không spam (key: (bot, coin, type) → bool)
 _alert_state: dict = {}
 # Bot offline tracking
-_bot_fail_count: dict  = {b: 0 for b in ('trend', 'arb')}
-_bot_offline_alerted: dict = {b: False for b in ('trend', 'arb')}
+_bot_fail_count: dict  = {b: 0 for b in _BOTS}
+_bot_offline_alerted: dict = {b: False for b in _BOTS}
 # Loss streak tracking
-_streak_alerted: dict  = {b: False for b in ('trend', 'arb')}
+_streak_alerted: dict  = {b: False for b in _BOTS}
 LOSS_STREAK_THRESHOLD  = 3   # cảnh báo khi thua liên tiếp ≥ N lệnh
 
 
