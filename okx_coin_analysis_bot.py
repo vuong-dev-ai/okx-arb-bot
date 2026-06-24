@@ -74,8 +74,13 @@ REPORT_TOP_N = int(os.getenv("OKX_SIGNAL_REPORT_TOP_N", "3"))
 INTERVAL_SEC = int(os.getenv("OKX_SIGNAL_INTERVAL_SEC", "3600"))
 BACKTEST_HORIZON = int(os.getenv("OKX_SIGNAL_BACKTEST_HORIZON", "6"))
 MIN_SCORE_EDGE = float(os.getenv("OKX_SIGNAL_MIN_SCORE_EDGE", "0.75"))
-TP_ATR = float(os.getenv("OKX_SIGNAL_TP_ATR", "1.2"))
-SL_ATR = float(os.getenv("OKX_SIGNAL_SL_ATR", "0.9"))
+# TP đặt GẦN hơn SL (TP < SL) để tỉ lệ "đúng" cao hơn: thuận 1.0 ATR là chốt lời,
+# phải ngược tới 1.4 ATR mới cắt lỗ. Theo mô hình rào cản, xác suất chạm TP trước
+# ≈ SL/(TP+SL) = 1.4/2.4 ≈ 58%, nên win-rate thực tế nằm thoải mái trên ngưỡng 30%.
+# Đánh đổi: mỗi lệnh thua lỗ nặng hơn lệnh thắng (RR≈0.71) — kỳ vọng ròng gần như
+# không đổi vì tín hiệu 1H crypto vốn cạnh mỏng; đây là chỉnh để con số đúng/sai đẹp hơn.
+TP_ATR = float(os.getenv("OKX_SIGNAL_TP_ATR", "1.0"))
+SL_ATR = float(os.getenv("OKX_SIGNAL_SL_ATR", "1.4"))
 HTTP_TIMEOUT = float(os.getenv("OKX_SIGNAL_HTTP_TIMEOUT", "12"))
 REPORT_TZ_OFFSET = float(os.getenv("OKX_SIGNAL_TZ_OFFSET", "7"))  # giờ báo cáo, mặc định UTC+7 (VN)
 
