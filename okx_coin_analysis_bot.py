@@ -86,6 +86,12 @@ BOT_NAME = os.getenv("OKX_SIGNAL_BOT_NAME", "OKX-SIGNAL").strip()
 # Số ngày giữ lại các dự đoán đã chấm xong trong sổ (lệnh OPEN luôn được giữ).
 PRED_RETENTION_DAYS = float(os.getenv("OKX_SIGNAL_PRED_RETENTION_DAYS", "45"))
 
+# Có gửi báo cáo lên Telegram mỗi vòng không. Đặt false cho service chạy ngầm
+# (chỉ ghi + chấm dự đoán, không spam). Mặc định true để giữ hành vi cũ.
+SEND_REPORT = os.getenv("OKX_SIGNAL_SEND_REPORT", "true").strip().lower() in {
+    "1", "true", "yes", "y", "on",
+}
+
 
 @dataclass(frozen=True)
 class Candle:
@@ -1118,7 +1124,9 @@ def run_once() -> str:
         print(f"[{BOT_NAME}] evaluate predictions failed: {exc}", file=sys.stderr)
     report = generate_report(record=True)
     print(report)
-    if send_telegram(report):
+    if not SEND_REPORT:
+        print("Chế độ chạy ngầm (OKX_SIGNAL_SEND_REPORT=false): chỉ ghi + chấm, không gửi Telegram.")
+    elif send_telegram(report):
         print("Telegram report sent.")
     elif TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
         print("Telegram report failed.", file=sys.stderr)
@@ -1190,12 +1198,14 @@ def main() -> int:
         except urllib.error.URLError as exc:
             message = f"[{BOT_NAME}] OKX network error: {exc}"
             print(message, file=sys.stderr)
-            send_telegram(message)
+            if SEND_REPORT:
+                send_telegram(message)
         except Exception:
             details = traceback.format_exc()
             message = f"[{BOT_NAME}] Bot error:\n{details[-2500:]}"
             print(message, file=sys.stderr)
-            send_telegram(message)
+            if SEND_REPORT:
+                send_telegram(message)
         if run_once_only:
             return 0
         sleep_until_next_run()
