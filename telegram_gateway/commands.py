@@ -110,6 +110,30 @@ async def _reply_signal_report(message):
         await message.reply_text(chunk)
 
 
+async def _build_accuracy_report() -> str:
+    signal_bot = _signal_bot_module()
+    # accuracy_report() có fetch mạng (chấm lại lệnh cũ) → chạy trong thread riêng.
+    return await asyncio.to_thread(signal_bot.accuracy_report)
+
+
+async def _reply_accuracy_report(message):
+    waiting = await message.reply_text("📊 Đang chấm lại các dự đoán cũ và tính tỉ lệ đúng/sai...")
+    try:
+        report = await _build_accuracy_report()
+    except Exception as e:
+        log.exception(f"Build accuracy report fail: {e}")
+        await waiting.edit_text(f"⚠ Không tạo được báo cáo tỉ lệ: {e}")
+        return
+
+    chunks = list(_plain_chunks(report))
+    if not chunks:
+        await waiting.edit_text("Chưa có dữ liệu tỉ lệ.")
+        return
+    await waiting.edit_text(chunks[0])
+    for chunk in chunks[1:]:
+        await message.reply_text(chunk)
+
+
 def _format_status(bot: str, data: dict) -> str:
     if not data:
         return f"<b>{bot.upper()}</b>: ❌ không phản hồi"
@@ -123,12 +147,12 @@ def _format_status(bot: str, data: dict) -> str:
     ]
     for p in positions[:10]:
         coin = _esc(p.get('coin'))
-        side = _esc(p.get('side', ''))
         pct  = p.get('pct') or 0
-        cur  = p.get('cur_price') or 0
-        emoji = '🟢' if pct >= 0 else '🔴'
+        net  = p.get('net_pnl') or 0
+        npay = p.get('n_pay') or 0
+        emoji = '🟢' if net >= 0 else '🔴'
         lines.append(
-            f"  {emoji} <code>{coin}</code> {side} {pct:+.2f}% @ {cur:.4f}"
+            f"  {emoji} <code>{coin}</code> net {net:+.2f}$ ({pct:+.2f}%) · {npay}x funding"
         )
     return '\n'.join(lines)
 
@@ -223,7 +247,8 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "/daily — báo cáo PnL hôm nay (net, sau fee)\n"
         "/summary — báo cáo 7 ngày + fee breakdown\n\n"
         "<b>📌 Tín hiệu</b>\n"
-        "/signals — top 3 coin Long/Short tiềm năng\n\n"
+        "/signals — top 3 coin Long/Short tiềm năng\n"
+        "/accuracy — tỉ lệ đúng/sai các dự đoán đã đưa\n\n"
         "<b>⚙ Điều khiển</b>\n"
         "/start_arb · /stop_arb\n"
         "/close &lt;coin&gt; — VD <code>/close BTC</code>\n"
@@ -239,7 +264,8 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 @auth
 async def cmd_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     kb = [
-        [InlineKeyboardButton("🎯 Top 3 signals", callback_data="signals:okx")],
+        [InlineKeyboardButton("🎯 Top 3 signals", callback_data="signals:okx"),
+         InlineKeyboardButton("📊 Tỉ lệ đúng/sai", callback_data="accuracy:okx")],
         [InlineKeyboardButton("📉 Arb status",    callback_data="status:arb"),
          InlineKeyboardButton("📊 Arb stats",     callback_data="stats:arb")],
         [InlineKeyboardButton("💹 Arb equity",    callback_data="equity:arb"),
@@ -257,6 +283,11 @@ async def cmd_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 @auth
 async def cmd_signals(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await _reply_signal_report(update.effective_message)
+
+
+@auth
+async def cmd_accuracy(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await _reply_accuracy_report(update.effective_message)
 
 
 @auth
@@ -292,16 +323,17 @@ async def cmd_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not ps:
             out.append("  (trống)")
         for p in ps:
-            coin = _esc(p.get('coin'))
-            side = _esc(p.get('side', ''))
-            pct  = p.get('pct') or 0
+            coin  = _esc(p.get('coin'))
+            pct   = p.get('pct') or 0
             entry = p.get('entry_price') or 0
             cur   = p.get('cur_price') or 0
-            stop  = p.get('stop_price') or 0
-            emoji = '🟢' if pct >= 0 else '🔴'
+            net   = p.get('net_pnl') or 0
+            fund  = p.get('funding_pnl') or 0
+            npay  = p.get('n_pay') or 0
+            emoji = '🟢' if net >= 0 else '🔴'
             out.append(
-                f"  {emoji} <code>{coin}</code> {side} {pct:+.2f}%\n"
-                f"     entry={entry:.4f} · cur={cur:.4f} · stop={stop:.4f}"
+                f"  {emoji} <code>{coin}</code> net {net:+.2f}$ ({pct:+.2f}%)\n"
+                f"     entry={entry:.4f} · cur={cur:.4f} · funding {fund:+.2f}$ ({npay}x)"
             )
     await update.message.reply_text('\n'.join(out), parse_mode=ParseMode.HTML)
 
@@ -443,7 +475,7 @@ async def cmd_daily(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         today_trades = [t for t in recent if (t.get('close_ts') or 0) >= start_ts]
         n    = len(today_trades)
         wins = sum(1 for t in today_trades if (t.get('net_pnl') or t.get('pnl') or 0) > 0)
-        gross = sum((t.get('pnl') or 0) for t in today_trades)
+        gross = sum((t.get('total_pnl') or t.get('pnl') or 0) for t in today_trades)
         fee   = sum((t.get('fee') or 0) for t in today_trades)
         net   = sum((t.get('net_pnl') or t.get('pnl') or 0) for t in today_trades)
         out.append(f"\n<b>{b.upper()}</b> · {n} trades · {wins}W/{n - wins}L")
@@ -468,7 +500,7 @@ async def cmd_summary(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         week  = [t for t in recent if (t.get('close_ts') or 0) >= cutoff]
         n     = len(week)
         wins  = sum(1 for t in week if (t.get('net_pnl') or t.get('pnl') or 0) > 0)
-        gross = sum((t.get('pnl') or 0) for t in week)
+        gross = sum((t.get('total_pnl') or t.get('pnl') or 0) for t in week)
         fee   = sum((t.get('fee') or 0) for t in week)
         net   = sum((t.get('net_pnl') or t.get('pnl') or 0) for t in week)
         wr    = (wins / n * 100) if n else 0
@@ -498,6 +530,8 @@ async def cb_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     if action == 'signals':
         await _reply_signal_report(q.message)
+    elif action == 'accuracy':
+        await _reply_accuracy_report(q.message)
     elif action == 'status':
         data = await clients.status(bot)
         await q.message.reply_text(_format_status(bot, data), parse_mode=ParseMode.HTML)
@@ -645,7 +679,7 @@ async def job_daily(ctx: ContextTypes.DEFAULT_TYPE):
         today_trades = [t for t in recent if (t.get('close_ts') or 0) >= start_ts]
         n     = len(today_trades)
         wins  = sum(1 for t in today_trades if (t.get('net_pnl') or t.get('pnl') or 0) > 0)
-        gross = sum((t.get('pnl') or 0) for t in today_trades)
+        gross = sum((t.get('total_pnl') or t.get('pnl') or 0) for t in today_trades)
         fee   = sum((t.get('fee') or 0) for t in today_trades)
         net   = sum((t.get('net_pnl') or t.get('pnl') or 0) for t in today_trades)
         out.append(

@@ -18,6 +18,7 @@ import time
 import sqlite3
 import threading
 import logging
+from contextlib import closing
 
 log = logging.getLogger(__name__)
 
@@ -86,7 +87,7 @@ def _conn():
 
 
 def init():
-    with _lock, _conn() as c:
+    with _lock, closing(_conn()) as c:
         c.executescript(SCHEMA)
         # Migration: thêm cột fee/net_pnl cho DB cũ chưa có
         for col, defn in [('fee', 'REAL DEFAULT 0'), ('net_pnl', 'REAL DEFAULT 0'),
@@ -109,7 +110,7 @@ def record_scan(opps):
         for o in opps
     ]
     try:
-        with _lock, _conn() as c:
+        with _lock, closing(_conn()) as c:
             c.executemany(
                 "INSERT INTO scans(ts,coin,funding_rate,next_rate,annualized) "
                 "VALUES (?,?,?,?,?)",
@@ -123,7 +124,7 @@ def record_open(pos):
     """Mutates pos by adding `_trade_id`."""
     try:
         usdt_in = pos['contracts'] * pos['ct_val'] * pos['entry_price']
-        with _lock, _conn() as c:
+        with _lock, closing(_conn()) as c:
             cur = c.execute(
                 """INSERT INTO trades
                    (coin, open_ts, entry_rate, entry_price, contracts, ct_val, usdt_in, status)
@@ -142,7 +143,7 @@ def record_tick(pos, pnl, funding_rate=None):
     if not tid or not pnl:
         return
     try:
-        with _lock, _conn() as c:
+        with _lock, closing(_conn()) as c:
             c.execute(
                 """INSERT INTO position_ticks
                    (trade_id, coin, ts, price, funding_pnl, price_pnl, total_pnl, funding_rate)
@@ -169,7 +170,7 @@ def record_close(pos, pnl, reason='auto'):
         net    = total - fee
         roi    = (total / vin * 100) if vin else 0
         net_roi = (net / vin * 100) if vin else 0
-        with _lock, _conn() as c:
+        with _lock, closing(_conn()) as c:
             c.execute(
                 """UPDATE trades SET
                        close_ts=?, exit_price=?, n_payments=?,
@@ -191,7 +192,7 @@ def record_close(pos, pnl, reason='auto'):
 def coin_stats(min_trades=1):
     """Per-coin aggregates with confidence-shrunk score."""
     try:
-        with _conn() as c:
+        with closing(_conn()) as c:
             rows = c.execute(
                 """SELECT coin,
                           COUNT(*)                                       AS n,
@@ -234,11 +235,29 @@ def coin_score_map():
     return {s['coin']: s['score'] for s in coin_stats()}
 
 
+def prune(scan_days=14, tick_days=30):
+    """Xóa dữ liệu telemetry CŨ để DB không phình vô hạn khi chạy dài tháng.
+    - scans: ~25 coin × mỗi 3 phút ⇒ ~12k dòng/ngày, chỉ để rank → giữ 14 ngày là thừa.
+    - position_ticks: snapshot giá/PnL mỗi 60s/vị thế → giữ 30 ngày cho biểu đồ.
+    GIỮ NGUYÊN bảng `trades` (lịch sử lệnh + analytics) vĩnh viễn. Trả (n_scans, n_ticks) đã xóa."""
+    now = time.time()
+    try:
+        with _lock, closing(_conn()) as c:
+            cur1 = c.execute("DELETE FROM scans WHERE ts < ?", (now - scan_days * 86400,))
+            n_scans = cur1.rowcount
+            cur2 = c.execute("DELETE FROM position_ticks WHERE ts < ?", (now - tick_days * 86400,))
+            n_ticks = cur2.rowcount
+        return n_scans, n_ticks
+    except Exception as e:
+        log.warning(f"prune: {e}")
+        return 0, 0
+
+
 def wal_checkpoint():
     """Gộp WAL vào DB chính + truncate (chống file -wal phình vô hạn khi chạy dài ngày).
     Trả size WAL (bytes) sau checkpoint để caller cảnh báo nếu vẫn lớn."""
     try:
-        with _lock, _conn() as c:
+        with _lock, closing(_conn()) as c:
             c.execute("PRAGMA wal_checkpoint(TRUNCATE);")
     except Exception as e:
         log.warning(f"wal_checkpoint: {e}")
@@ -252,7 +271,7 @@ def wal_checkpoint():
 def global_stats():
     """Tổng quan + threshold sweet spot."""
     try:
-        with _conn() as c:
+        with closing(_conn()) as c:
             agg = c.execute(
                 """SELECT COUNT(*)                                       AS n,
                           SUM(CASE WHEN net_pnl > 0 THEN 1 ELSE 0 END)  AS wins,
@@ -263,6 +282,10 @@ def global_stats():
                           SUM(fee)                                       AS total_fee,
                           SUM(net_pnl)                                   AS total_net_pnl,
                           AVG(entry_rate)                                AS avg_entry_rate,
+                          AVG(CASE WHEN net_pnl > 0 THEN net_roi_pct END) AS avg_win,
+                          AVG(CASE WHEN net_pnl < 0 THEN net_roi_pct END) AS avg_loss,
+                          SUM(CASE WHEN net_pnl > 0 THEN net_pnl ELSE 0 END) AS gross_win,
+                          SUM(CASE WHEN net_pnl < 0 THEN net_pnl ELSE 0 END) AS gross_loss,
                           MIN(open_ts)                                   AS first_ts,
                           MAX(close_ts)                                  AS last_ts
                      FROM trades WHERE status='closed'"""
@@ -297,6 +320,13 @@ def global_stats():
     g = dict(agg) if agg else {}
     n = g.get('n') or 0
     g['win_rate']   = ((g.get('wins') or 0) / n * 100) if n else 0
+    # avg_win/avg_loss có thể NULL (chưa có lệnh thắng/thua) → ép 0 cho gateway format an toàn
+    g['avg_win']    = g.get('avg_win') or 0.0
+    g['avg_loss']   = g.get('avg_loss') or 0.0
+    # profit_factor = tổng lãi / |tổng lỗ| (net, sau fee). Không có lệnh lỗ → để 99.99 nếu có lãi.
+    gw = g.get('gross_win') or 0.0
+    gl = abs(g.get('gross_loss') or 0.0)
+    g['profit_factor'] = round(gw / gl, 2) if gl > 0 else (99.99 if gw > 0 else 0.0)
     g['buckets']    = [
         {**dict(b), 'win_rate': round((dict(b)['win_rate'] or 0) * 100, 1)}
         for b in (buckets or [])
@@ -315,7 +345,7 @@ def global_stats():
 
 def recent_trades(limit=15):
     try:
-        with _conn() as c:
+        with closing(_conn()) as c:
             rows = c.execute(
                 """SELECT coin, open_ts, close_ts, entry_rate, entry_price, exit_price,
                           n_payments, funding_pnl, price_pnl, total_pnl,
@@ -336,7 +366,7 @@ def recent_trades(limit=15):
 def equity_curve():
     """Equity curve theo net_pnl (sau fee) để hiển thị thực tế."""
     try:
-        with _conn() as c:
+        with closing(_conn()) as c:
             rows = c.execute(
                 """SELECT close_ts, net_pnl FROM trades
                    WHERE status='closed' AND close_ts IS NOT NULL
@@ -358,7 +388,7 @@ def backfill_fees():
     Chỉ cập nhật các trade có fee=0 và usdt_in > 0."""
     ROUND_TRIP = (0.001 + 0.0005) * 2  # spot buy+sell + swap open+close
     try:
-        with _lock, _conn() as c:
+        with _lock, closing(_conn()) as c:
             rows = c.execute(
                 "SELECT id, usdt_in, total_pnl FROM trades WHERE status='closed' AND (fee=0 OR fee IS NULL) AND usdt_in > 0"
             ).fetchall()

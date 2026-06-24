@@ -51,7 +51,7 @@ ssh "$TARGET" "cd '$REMOTE_DIR' && for d in okx-arb-bot; do \
   env=\"\$d/.env\"; [ -f \"\$env\" ] || { echo \"   ⚠ THIẾU \$env — bỏ qua\"; continue; }; \
   grep -q '^AUTO_START_BOT='        \"\$env\" || echo 'AUTO_START_BOT=true'   >> \"\$env\"; \
   done; \
-  grep -q '^ARB_CAPITAL_FRACTION='   okx-arb-bot/.env      2>/dev/null || echo 'ARB_CAPITAL_FRACTION=0.5'   >> okx-arb-bot/.env; \
+  grep -q '^ARB_CAPITAL_FRACTION='   okx-arb-bot/.env      2>/dev/null || echo 'ARB_CAPITAL_FRACTION=0.7'   >> okx-arb-bot/.env; \
   echo '   env OK'"
 
 # 4) Restart service

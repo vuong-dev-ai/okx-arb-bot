@@ -61,4 +61,4 @@ if spots:
 else:
     log.info("Không có spot nào cần bán.")
 
-log.info("\nHoàn tất. Chạy bot.py để bắt đầu lại.")
+log.info("\nHoàn tất. Chạy app.py (web dashboard + bot) để bắt đầu lại.")

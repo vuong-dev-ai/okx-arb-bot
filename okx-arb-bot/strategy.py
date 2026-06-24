@@ -66,11 +66,13 @@ POSITION_PCT     = 0.07      # 7% số dư/vị thế (hạ 15→7): chứa đư
 MIN_USDT         = 50.0      # bỏ qua lệnh quá nhỏ (phí cố định lấn át funding)
 LEVERAGE         = "5"
 
-# ── Vốn dành cho ARB khi DÙNG CHUNG tài khoản với trend-bot ──
-# get_available_usdt() trả số dư GỘP của cả tài khoản. Để 2 bot không cùng tưởng
-# mình sở hữu 100% vốn (→ over-leverage), mỗi bot chỉ được triển khai tối đa
-# CAPITAL_FRACTION × equity. arb + trend nên cộng lại ≤ 1.0 (vd 0.5 + 0.5).
-CAPITAL_FRACTION = float(os.getenv('ARB_CAPITAL_FRACTION', '0.5'))
+# ── Vốn dành cho ARB ──
+# get_available_usdt() trả số dư GỘP của cả tài khoản. CAPITAL_FRACTION giới hạn phần
+# vốn arb được triển khai tối đa = CAPITAL_FRACTION × equity.
+# LỊCH SỬ: hồi chung tài khoản với trend-bot đặt 0.5 (arb) + 0.5 (trend) ≤ 1.0. Trend đã
+# xoá hẳn (15/06) → arb chạy MỘT MÌNH, default nâng 0.5→0.7. Server vẫn đọc env
+# ARB_CAPITAL_FRACTION (env override code) — đổi giá trị live bằng cách sửa env đó.
+CAPITAL_FRACTION = float(os.getenv('ARB_CAPITAL_FRACTION', '0.7'))
 # Mỗi vị thế arb "tiêu" ≈ notional × (1 + 1/leverage): spot full + swap margin.
 CAPITAL_PER_NOTIONAL = 1.0 + 1.0 / float(LEVERAGE)
 
@@ -437,6 +439,30 @@ def _get_spot_available(ccy):
     except Exception as e:
         log.debug(f"Parse balance {ccy}: {e}")
     return None
+
+
+def get_all_spot_balances():
+    """{ccy: availBal} cho MỌI coin != USDT có số dư available > 0. None nếu API fail.
+
+    Dùng để phát hiện 'spot mồ côi' — coin còn nằm trong tài khoản nhưng KHÔNG có chân
+    swap hedge (vd bot bị kill ngay giữa lúc đã mua spot nhưng chưa kịp short)."""
+    resp = _retry(lambda: account_api.get_account_balance(),
+                  attempts=3, base_delay=0.3, what='all_balances')
+    if not resp or resp.get('code') != '0':
+        return None
+    out = {}
+    try:
+        for d in resp['data'][0].get('details', []):
+            ccy = d.get('ccy')
+            if not ccy or ccy == 'USDT':
+                continue
+            avail = float(d.get('availBal') or d.get('availEq') or 0)
+            if avail > 0:
+                out[ccy] = avail
+    except Exception as e:
+        log.debug(f"Parse all balances: {e}")
+        return None
+    return out
 
 
 def sell_spot(spot_id, amount):

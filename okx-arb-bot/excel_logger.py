@@ -10,6 +10,10 @@ EXCEL_FILE = "pnl_log.xlsx"
 _BASE      = os.path.dirname(os.path.abspath(__file__))
 DOCS_DIR   = os.path.join(_BASE, "docs")
 
+# data.json được push lên GitHub Pages (có thể PUBLIC). Mặc định vẫn show số dư như cũ
+# (không phá dashboard). Đặt DASH_HIDE_BALANCE=true để CHE số dư USDT khỏi file công khai.
+HIDE_BALANCE = os.getenv("DASH_HIDE_BALANCE", "").strip().lower() in ("1", "true", "yes")
+
 HEADERS = [
     "Thời gian", "Coin", "Giá vào ($)", "Giá hiện tại ($)",
     "Vốn vào ($)", "Funding PnL ($)", "Giá PnL ($)",
@@ -155,6 +159,7 @@ def export_json(live: dict = None):
     hdrs, rows = [], []
     chart      = {'labels': [], 'values': []}
     last_bal   = ""
+    bal_i      = -1   # khởi tạo sẵn (chỉ gán thật khi có file Excel) để redaction bên dưới an toàn
 
     if os.path.exists(excel_path):
         wb   = openpyxl.load_workbook(excel_path, data_only=True)
@@ -186,6 +191,15 @@ def export_json(live: dict = None):
                 if r[bal_i]:
                     last_bal = r[bal_i]
                     break
+
+    # ── Che số dư khỏi file PUBLIC nếu bật DASH_HIDE_BALANCE ──
+    if HIDE_BALANCE:
+        usdt_now = None
+        last_bal = ""
+        if bal_i >= 0:
+            for r in rows:
+                if len(r) > bal_i:
+                    r[bal_i] = ""        # bỏ cột "Số dư USDT ($)" khỏi history công khai
 
     data = {
         "updated_at":    datetime.now().strftime("%d/%m/%Y %H:%M"),

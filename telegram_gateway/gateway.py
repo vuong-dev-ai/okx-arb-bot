@@ -74,6 +74,7 @@ def build_app() -> Application:
     h(CommandHandler('daily',        commands.cmd_daily))
     h(CommandHandler('summary',      commands.cmd_summary))
     h(CommandHandler('signals',      commands.cmd_signals))
+    h(CommandHandler('accuracy',     commands.cmd_accuracy))
 
     h(CommandHandler('start_arb',    commands.cmd_start_arb))
     h(CommandHandler('stop_arb',     commands.cmd_stop_arb))

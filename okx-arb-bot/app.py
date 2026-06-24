@@ -28,6 +28,7 @@ from strategy import (
     open_position, close_position, sell_spot,
     check_exit_conditions, estimate_pnl, get_spot_price,
     get_okx_swap_positions, get_instrument_state, funding_payments_since, collectible_rate,
+    get_all_spot_balances,
     MIN_FUNDING_RATE, MIN_USDT, PRICE_STOP_PCT,
     ROUND_TRIP_FEE, FEE_SAFETY, ENTRY_MIN_SETTLEMENTS, EXIT_MIN_SETTLEMENTS,
     adaptive_position_pct, SCAN_COINS,
@@ -92,6 +93,9 @@ FUNDING_CHK_INT = 30        # check funding rate exit-condition mỗi 30s (rate 
 TICK_LOG_INT    = 60        # ghi tick log vào DB mỗi 60s
 RECON_INT       = 45        # reconcile với OKX mỗi 45s (150→45: phát hiện phantom & retry dọn
                             # spot unhedged nhanh hơn — quan trọng khi chung TK với trend-bot)
+ORPHAN_INT      = 120       # quét spot mồ côi (đã mua spot nhưng KHÔNG có swap hedge) mỗi 2 phút.
+                            # Chạy ĐỘC LẬP với reconcile thường: orphan có thể tồn tại khi KHÔNG
+                            # có vị thế local nào (vd crash giữa 2 chân mở lệnh).
 WAL_CKPT_INT    = 3600      # checkpoint WAL DB mỗi giờ (chống file .db-wal phình vô hạn)
 EXCL_INT        = 8*3600    # ghi Excel mỗi 8 giờ
 PUSH_INT        = 300       # push GitHub Pages mỗi 5 phút
@@ -337,9 +341,55 @@ def _reconcile_with_okx():
     return removed
 
 
+def _reconcile_orphan_spot():
+    """Quét số dư spot của các coin BOT GIAO DỊCH mà KHÔNG có chân swap hedge nào (local lẫn
+    trên OKX) ⇒ 'spot mồ côi'. Gốc: bot bị kill ngay giữa lúc open_position đã MUA spot nhưng
+    CHƯA kịp short swap (hoặc chưa kịp append vào state) → còn spot trần, KHÔNG có record local
+    nên reconcile thường (chỉ duyệt local) không bao giờ thấy. Để lâu = rủi ro hướng giá không hedge.
+
+    AN TOÀN:
+      - CHỈ đụng coin trong SCAN_COINS (coin bot tự giao dịch) — không chạm số dư lạ.
+      - Bỏ qua coin đang có swap (đã hedge), có vị thế local, hoặc đang trong tiến trình đóng.
+      - Bỏ qua dust (< nửa MIN_USDT) để tránh bán nhầm vụn phí.
+      - open_position chạy ĐỒNG BỘ trong cùng thread _bot() ⇒ không bao giờ interleave với quét này.
+    Trả số coin đã dọn."""
+    balances = get_all_spot_balances()
+    if not balances:
+        return 0
+    okx_pos = get_okx_swap_positions()
+    if okx_pos is None:
+        return 0  # API fail — KHÔNG kết luận (tránh bán nhầm khi không đọc được swap)
+    with _lock:
+        local_coins = {p['coin'] for p in _state['positions']}
+        closing     = set(_state['closing'])
+    cleaned = 0
+    for ccy, avail in balances.items():
+        if ccy not in SCAN_COINS:
+            continue
+        if ccy in local_coins or ccy in okx_pos or ccy in closing:
+            continue  # đã có chân swap hedge / đang xử lý → KHÔNG phải mồ côi
+        spot_id = f"{ccy}-USDT"
+        price = _get_spot_price(spot_id)
+        if price is None:
+            continue
+        notional = avail * price
+        if notional < MIN_USDT * 0.5:
+            continue  # dust — bỏ qua
+        _log(f"[{ccy}] ⚠ SPOT MỒ CÔI ${notional:.2f} (không có swap hedge) — dọn bán...")
+        notifier.notify_critical(
+            f"{ccy}: phát hiện spot KHÔNG hedge ${notional:.2f} (nghi bot crash giữa 2 chân mở lệnh) "
+            f"— bot đang tự bán dọn.", key=f"orphan-{ccy}")
+        if sell_spot(spot_id, avail):
+            cleaned += 1
+            _log(f"[{ccy}] Đã dọn spot mồ côi ✓")
+        else:
+            _log(f"[{ccy}] Bán spot mồ côi CHƯA được — sẽ thử lại chu kỳ sau")
+    return cleaned
+
+
 def _bot():
     last_scan = last_mon = last_excel = last_push = last_recon = last_tick_log = last_fund_chk = 0
-    last_bal = last_ckpt = 0
+    last_bal = last_ckpt = last_orphan = 0
     last_opps: list = []
     _my_thread = threading.current_thread()
 
@@ -462,6 +512,16 @@ def _bot():
                 except Exception as e:
                     _log(f"Lỗi reconcile: {e}")
             last_recon = now
+
+        # ── Quét spot mồ côi (chạy KỂ CẢ khi không có vị thế local) ──
+        if now - last_orphan >= ORPHAN_INT:
+            try:
+                n = _reconcile_orphan_spot()
+                if n:
+                    _log(f"Dọn {n} spot mồ côi (mua spot nhưng thiếu swap hedge)")
+            except Exception as e:
+                _log(f"Lỗi quét spot mồ côi: {e}")
+            last_orphan = now
 
         # ── Scan cơ hội ───────────────────────────────────────────
         if now - last_scan >= SCAN_INT:
@@ -586,9 +646,12 @@ def _bot():
             _offload('push', _do_push)
             last_push = now
 
-        # ── Checkpoint WAL DB mỗi giờ (chống .db-wal phình) ─────
+        # ── Prune telemetry cũ + checkpoint WAL DB mỗi giờ (chống DB/.db-wal phình) ─
         if now - last_ckpt >= WAL_CKPT_INT:
             try:
+                ns, nt = analytics.prune()
+                if ns or nt:
+                    _log(f"Prune DB: xóa {ns} scan + {nt} tick cũ")
                 wal_sz = analytics.wal_checkpoint()
                 if wal_sz > 50_000_000:
                     notifier.notify_critical(f"analytics.db-wal vẫn lớn ({wal_sz//1_000_000}MB) sau checkpoint — kiểm tra DB",

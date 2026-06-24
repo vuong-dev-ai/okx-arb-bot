@@ -14,6 +14,7 @@ This bot is for analysis only. It does not place orders.
 
 from __future__ import annotations
 
+import contextlib
 import html
 import json
 import math
@@ -39,6 +40,11 @@ BASE_DIR = Path(__file__).resolve().parent
 OKX_BASE_URL = "https://www.okx.com"
 LOCK_FILE = BASE_DIR / "okx_coin_analysis_bot.lock"
 _LOCK_HANDLE = None
+
+# Sổ theo dõi dự đoán: mỗi tín hiệu top được ghi lại để sau này chấm đúng/sai.
+# File data nằm cạnh script (deploy.ps1 chỉ sync *.py nên data persist qua deploy).
+PREDICTIONS_FILE = BASE_DIR / "signal_predictions.json"
+PRED_LOCK_FILE = BASE_DIR / "signal_predictions.lock"
 
 
 def load_env_file(path: Path) -> None:
@@ -76,6 +82,9 @@ REPORT_TZ_OFFSET = float(os.getenv("OKX_SIGNAL_TZ_OFFSET", "7"))  # giờ báo c
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 BOT_NAME = os.getenv("OKX_SIGNAL_BOT_NAME", "OKX-SIGNAL").strip()
+
+# Số ngày giữ lại các dự đoán đã chấm xong trong sổ (lệnh OPEN luôn được giữ).
+PRED_RETENTION_DAYS = float(os.getenv("OKX_SIGNAL_PRED_RETENTION_DAYS", "45"))
 
 
 @dataclass(frozen=True)
@@ -125,6 +134,10 @@ class AnalysisResult:
     short_bt: BacktestResult
     reasons: tuple[str, ...]
     risk_note: str
+    atr: float = 0.0
+    entry_ts: int = 0
+    tp_price: float = 0.0
+    sl_price: float = 0.0
 
 
 def env_bool(name: str, default: bool = False) -> bool:
@@ -446,6 +459,13 @@ def choose_side(score: Score) -> str:
     return "NEUTRAL"
 
 
+def tp_sl_for(entry: float, atr_value: float, side: str) -> tuple[float, float]:
+    """Mức chốt lời / cắt lỗ cho 1 tín hiệu, dựa trên ATR (giống simulate_trade)."""
+    if side == "LONG":
+        return entry + atr_value * TP_ATR, entry - atr_value * SL_ATR
+    return entry - atr_value * TP_ATR, entry + atr_value * SL_ATR
+
+
 def simulate_trade(
     candles: list[Candle],
     entry_index: int,
@@ -579,18 +599,25 @@ def analyze_instrument(inst_id: str) -> AnalysisResult | None:
         f"horizon {BACKTEST_HORIZON} nến {BAR}"
     )
 
+    entry_price = candles[-1].close
+    tp_price, sl_price = tp_sl_for(entry_price, score.atr, side)
+
     return AnalysisResult(
         inst_id=inst_id,
         direction=side,
         strength=strength_label(confidence, selected_bt.trades),
         confidence=confidence,
-        price=candles[-1].close,
+        price=entry_price,
         long_score=score.long_score,
         short_score=score.short_score,
         long_bt=long_bt,
         short_bt=short_bt,
         reasons=tuple(reasons[:4]),
         risk_note=risk_note,
+        atr=score.atr,
+        entry_ts=candles[-1].ts,
+        tp_price=tp_price,
+        sl_price=sl_price,
     )
 
 
@@ -708,6 +735,354 @@ def build_report(results: list[AnalysisResult], errors: list[str]) -> str:
     return "\n".join(lines)
 
 
+# ════════════════════ SỔ THEO DÕI DỰ ĐOÁN (đúng/sai) ════════════════════
+# Mỗi tín hiệu top được ghi lại lúc đưa ra. Sau khi đủ `horizon` nến, bot chấm
+# WIN/LOSS dựa trên giá thực tế (chạm TP/SL trước, hoặc đóng theo horizon) — y
+# hệt định nghĩa win-rate trong backtest. Tổng hợp cho ra tỉ lệ đúng/sai thật.
+
+def bar_to_seconds(bar: str) -> int:
+    """Đổi mã nến OKX (vd '1H', '15m', '4H', '1D') sang số giây."""
+    bar = (bar or "1H").strip()
+    digits = "".join(ch for ch in bar if ch.isdigit()) or "1"
+    unit = "".join(ch for ch in bar if ch.isalpha()) or "H"
+    factor = {
+        "m": 60, "H": 3600, "D": 86400, "W": 604800, "M": 2592000, "Y": 31536000,
+    }.get(unit, 3600)  # 'm' = phút, 'M' = tháng (OKX phân biệt hoa/thường)
+    return int(digits) * factor
+
+
+@contextlib.contextmanager
+def _pred_lock(timeout: float = 10.0):
+    """Khóa file để read-modify-write sổ dự đoán an toàn giữa các tiến trình/thread
+    trên CÙNG máy (gateway + bot dùng chung file). Hết timeout thì vẫn chạy
+    best-effort (ghi atomic nên cùng lắm mất 1 cập nhật, không hỏng file)."""
+    handle = PRED_LOCK_FILE.open("a+b")
+    acquired = False
+    start = time.monotonic()
+    try:
+        while True:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+                break
+            except OSError:
+                if time.monotonic() - start > timeout:
+                    break
+                time.sleep(0.2)
+        yield acquired
+    finally:
+        if acquired:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass
+        handle.close()
+
+
+def _load_predictions() -> list[dict]:
+    if not PREDICTIONS_FILE.exists():
+        return []
+    try:
+        data = json.loads(PREDICTIONS_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, ValueError):
+        return []
+    return data if isinstance(data, list) else []
+
+
+def _save_predictions(preds: list[dict]) -> None:
+    """Ghi atomic (tmp + replace). Dọn các lệnh đã chốt/hết hạn quá hạn lưu trữ,
+    nhưng LUÔN giữ lệnh còn OPEN dù cũ tới đâu (chưa chấm thì chưa bỏ)."""
+    cutoff = time.time() - PRED_RETENTION_DAYS * 86400
+    kept = [
+        p for p in preds
+        if p.get("status") == "OPEN"
+        or (p.get("result_ts") or p.get("created_ts") or 0) >= cutoff
+    ]
+    tmp = PREDICTIONS_FILE.with_name(PREDICTIONS_FILE.name + ".tmp")
+    tmp.write_text(json.dumps(kept, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, PREDICTIONS_FILE)
+
+
+def record_predictions(results: list[AnalysisResult]) -> int:
+    """Ghi các tín hiệu top vào sổ. Dedup theo (coin, entry_ts): xem /signals
+    nhiều lần trong cùng 1 nến KHÔNG tạo bản trùng."""
+    if not results:
+        return 0
+    now = int(time.time())
+    added = 0
+    with _pred_lock():
+        preds = _load_predictions()
+        existing = {(p.get("inst_id"), p.get("entry_ts")) for p in preds}
+        for r in results:
+            key = (r.inst_id, r.entry_ts)
+            if key in existing:
+                continue
+            preds.append({
+                "id": f"{r.inst_id}@{r.entry_ts}",
+                "created_ts": now,
+                "entry_ts": int(r.entry_ts),
+                "inst_id": r.inst_id,
+                "direction": r.direction,
+                "entry_price": r.price,
+                "atr": r.atr,
+                "tp_price": r.tp_price,
+                "sl_price": r.sl_price,
+                "confidence": round(r.confidence, 1),
+                "horizon": BACKTEST_HORIZON,
+                "bar": BAR,
+                "status": "OPEN",
+                "result_ts": None,
+                "result_return_pct": None,
+            })
+            existing.add(key)
+            added += 1
+        if added:
+            _save_predictions(preds)
+    return added
+
+
+def _outcome_return(candles: list[Candle], entry_index: int, pred: dict) -> float:
+    """Lợi nhuận % thực tế của 1 dự đoán, dùng TP/SL đã lưu (độc lập config hiện
+    tại). Quét các nến sau entry: chạm TP/SL trước thì lấy mức đó, nếu cùng nến
+    chạm cả hai thì coi như dính SL (thận trọng), hết horizon thì tính theo close."""
+    side = pred["direction"]
+    entry = pred["entry_price"]
+    tp = pred["tp_price"]
+    sl = pred["sl_price"]
+    horizon = int(pred["horizon"])
+    end_index = min(len(candles) - 1, entry_index + horizon)
+    for i in range(entry_index + 1, end_index + 1):
+        high = candles[i].high
+        low = candles[i].low
+        if side == "LONG":
+            hit_tp = high >= tp
+            hit_sl = low <= sl
+            if hit_sl:
+                return pct_change(sl, entry)
+            if hit_tp:
+                return pct_change(tp, entry)
+        else:
+            hit_tp = low <= tp
+            hit_sl = high >= sl
+            if hit_sl:
+                return pct_change(entry, sl)
+            if hit_tp:
+                return pct_change(entry, tp)
+    final_close = candles[end_index].close
+    if side == "LONG":
+        return pct_change(final_close, entry)
+    return pct_change(entry, final_close)
+
+
+def evaluate_open_predictions() -> int:
+    """Chấm các dự đoán đã đủ thời gian. Trả về số lệnh vừa được chốt trạng thái."""
+    with _pred_lock():
+        preds = _load_predictions()
+    open_preds = [p for p in preds if p.get("status") == "OPEN"]
+    if not open_preds:
+        return 0
+
+    by_inst: dict[str, list[dict]] = {}
+    for p in open_preds:
+        by_inst.setdefault(p["inst_id"], []).append(p)
+
+    # entry_ts (ts nến OKX) tính bằng MILI-giây, nên mọi mốc thời gian so với nó
+    # cũng phải dùng ms. result_ts/created_ts thì lưu bằng giây cho gọn (chỉ dùng
+    # để dọn sổ + sắp xếp recency, nhất quán nội bộ với nhau).
+    now_sec = int(time.time())
+    now_ms = time.time() * 1000.0
+    updates: dict[str, tuple[str, float | None, int]] = {}
+    for inst_id, plist in by_inst.items():
+        # Chỉ fetch nếu có ít nhất 1 lệnh đã tới hạn chấm.
+        if not any(
+            now_ms >= int(p["entry_ts"]) + int(p["horizon"]) * bar_to_seconds(p["bar"]) * 1000
+            for p in plist
+        ):
+            continue
+        try:
+            candles = fetch_candles(inst_id)
+        except Exception as exc:
+            print(f"evaluate fetch {inst_id} failed: {exc}", file=sys.stderr)
+            continue
+        if not candles:
+            continue
+        ts_index = {c.ts: i for i, c in enumerate(candles)}
+        last_ts = candles[-1].ts
+        for p in plist:
+            bar_ms = bar_to_seconds(p["bar"]) * 1000
+            horizon = int(p["horizon"])
+            entry_ts = int(p["entry_ts"])
+            due_ts = entry_ts + horizon * bar_ms
+            idx = ts_index.get(entry_ts)
+            if idx is None:
+                # Nến gốc đã rớt khỏi cửa sổ lịch sử → hết hạn, không chấm được.
+                if now_ms > entry_ts + (horizon + 24) * bar_ms:
+                    updates[p["id"]] = ("EXPIRED", None, now_sec)
+                continue
+            if last_ts < due_ts or idx + horizon > len(candles) - 1:
+                continue  # chưa đủ nến để chốt
+            ret = _outcome_return(candles, idx, p)
+            status = "WIN" if ret > 0 else ("LOSS" if ret < 0 else "FLAT")
+            updates[p["id"]] = (status, round(ret, 4), now_sec)
+
+    if not updates:
+        return 0
+    with _pred_lock():
+        preds = _load_predictions()
+        for p in preds:
+            upd = updates.get(p.get("id"))
+            if upd and p.get("status") == "OPEN":
+                p["status"], p["result_return_pct"], p["result_ts"] = upd
+        _save_predictions(preds)
+    return len(updates)
+
+
+def summarize_accuracy() -> dict:
+    with _pred_lock():
+        preds = _load_predictions()
+    closed = [p for p in preds if p.get("status") in ("WIN", "LOSS", "FLAT")]
+    wins = sum(1 for p in closed if p["status"] == "WIN")
+    losses = sum(1 for p in closed if p["status"] == "LOSS")
+    flat = sum(1 for p in closed if p["status"] == "FLAT")
+    decided = wins + losses
+    rets = [p["result_return_pct"] for p in closed if p.get("result_return_pct") is not None]
+
+    by_direction: dict[str, dict] = {}
+    for side in ("LONG", "SHORT"):
+        sub = [p for p in closed if p["direction"] == side]
+        w = sum(1 for p in sub if p["status"] == "WIN")
+        l = sum(1 for p in sub if p["status"] == "LOSS")
+        by_direction[side] = {
+            "n": len(sub), "wins": w, "losses": l,
+            "win_rate": (w / (w + l) * 100) if (w + l) else 0.0,
+        }
+
+    coins: dict[str, dict] = {}
+    for p in closed:
+        c = coins.setdefault(p["inst_id"], {"wins": 0, "losses": 0, "flat": 0, "ret": []})
+        if p["status"] == "WIN":
+            c["wins"] += 1
+        elif p["status"] == "LOSS":
+            c["losses"] += 1
+        else:
+            c["flat"] += 1
+        if p.get("result_return_pct") is not None:
+            c["ret"].append(p["result_return_pct"])
+    coin_list = []
+    for inst, c in coins.items():
+        d = c["wins"] + c["losses"]
+        coin_list.append({
+            "inst_id": inst,
+            "n": c["wins"] + c["losses"] + c["flat"],
+            "wins": c["wins"], "losses": c["losses"],
+            "win_rate": (c["wins"] / d * 100) if d else 0.0,
+            "avg_return": statistics.fmean(c["ret"]) if c["ret"] else 0.0,
+        })
+    coin_list.sort(key=lambda x: (x["n"], x["win_rate"]), reverse=True)
+
+    recent = sorted(closed, key=lambda p: p.get("result_ts") or 0, reverse=True)[:8]
+    return {
+        "wins": wins,
+        "losses": losses,
+        "flat": flat,
+        "decided": decided,
+        "win_rate": (wins / decided * 100) if decided else 0.0,
+        "avg_return": statistics.fmean(rets) if rets else 0.0,
+        "open": sum(1 for p in preds if p.get("status") == "OPEN"),
+        "expired": sum(1 for p in preds if p.get("status") == "EXPIRED"),
+        "by_direction": by_direction,
+        "by_coin": coin_list,
+        "recent": recent,
+    }
+
+
+def build_accuracy_report() -> str:
+    s = summarize_accuracy()
+    now = datetime.now(timezone(timedelta(hours=REPORT_TZ_OFFSET)))
+    lines = [
+        "🎯 TỈ LỆ ĐÚNG / SAI",
+        f"Chốt sổ lúc {now:%H:%M %d/%m} · nến {BAR} · giữ {BACKTEST_HORIZON} nến",
+        "━━━━━━━━━━━━━━━━━━━━",
+        "",
+    ]
+    if s["decided"] == 0:
+        lines.append("Chưa có dự đoán nào đủ thời gian để chấm.")
+        lines.append(f"⏳ Đang theo dõi: {s['open']} dự đoán.")
+        if s["open"] == 0:
+            lines.append("")
+            lines.append("Mở /signals vài lần để bot ghi lại dự đoán, rồi quay lại sau vài giờ.")
+        return "\n".join(lines)
+
+    wr = s["win_rate"]
+    flat_s = f"   ⚪ Hòa: {s['flat']}" if s["flat"] else ""
+    lines.extend([
+        f"✅ Đúng: {s['wins']}   ❌ Sai: {s['losses']}{flat_s}",
+        f"🏆 Tỉ lệ đúng: {confidence_bar(wr)} {wr:.1f}%  ({s['decided']} lệnh đã chấm)",
+        f"📈 Lợi nhuận TB/lệnh: {s['avg_return']:+.2f}%",
+        f"⏳ Đang theo dõi: {s['open']}" + (f" · ⌛ Hết hạn: {s['expired']}" if s["expired"] else ""),
+        "",
+        "Theo hướng:",
+    ])
+    for side in ("LONG", "SHORT"):
+        d = s["by_direction"][side]
+        emoji = "🟢" if side == "LONG" else "🔴"
+        if d["wins"] + d["losses"] == 0:
+            lines.append(f"  {emoji} {side}: chưa có mẫu đã chấm")
+        else:
+            lines.append(
+                f"  {emoji} {side}: {d['wins']}✅/{d['losses']}❌ · WR {d['win_rate']:.0f}%"
+            )
+
+    coins = s["by_coin"][:6]
+    if coins:
+        lines.append("")
+        lines.append("Theo coin (nhiều mẫu nhất):")
+        for c in coins:
+            lines.append(
+                f"  {c['inst_id']}: {c['wins']}✅/{c['losses']}❌ · "
+                f"WR {c['win_rate']:.0f}% · avg {c['avg_return']:+.2f}%"
+            )
+
+    if s["recent"]:
+        lines.append("")
+        lines.append("Gần đây nhất:")
+        for r in s["recent"]:
+            mark = {"WIN": "✅", "LOSS": "❌"}.get(r["status"], "⚪")
+            side_e = "🟢L" if r["direction"] == "LONG" else "🔴S"
+            ret = r.get("result_return_pct")
+            ret_s = f"{ret:+.2f}%" if ret is not None else "-"
+            lines.append(f"  {mark} {side_e} {r['inst_id']} {ret_s}")
+
+    lines.append("")
+    lines.append("Ghi chú: 'đúng' = lệnh có lãi khi chốt theo TP/SL/horizon đã đề xuất.")
+    return "\n".join(lines)
+
+
+def accuracy_report() -> str:
+    """Chấm lại các dự đoán cũ rồi trả về báo cáo tỉ lệ (dùng cho gateway/CLI)."""
+    try:
+        evaluate_open_predictions()
+    except Exception as exc:
+        print(f"evaluate_open_predictions failed: {exc}", file=sys.stderr)
+    return build_accuracy_report()
+
+
 def send_telegram(text: str) -> bool:
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         return False
@@ -735,7 +1110,13 @@ def send_telegram(text: str) -> bool:
 
 
 def run_once() -> str:
-    report = generate_report()
+    try:
+        n = evaluate_open_predictions()
+        if n:
+            print(f"Đã chấm {n} dự đoán.")
+    except Exception as exc:
+        print(f"[{BOT_NAME}] evaluate predictions failed: {exc}", file=sys.stderr)
+    report = generate_report(record=True)
     print(report)
     if send_telegram(report):
         print("Telegram report sent.")
@@ -746,7 +1127,7 @@ def run_once() -> str:
     return report
 
 
-def generate_report() -> str:
+def _collect_results() -> tuple[list[AnalysisResult], list[str]]:
     instruments = fetch_top_instruments()
     results: list[AnalysisResult] = []
     errors: list[str] = []
@@ -758,6 +1139,17 @@ def generate_report() -> str:
         except Exception as exc:
             errors.append(f"{inst_id}: {exc}")
     results.sort(key=lambda item: item.confidence, reverse=True)
+    return results, errors
+
+
+def generate_report(record: bool = True) -> str:
+    results, errors = _collect_results()
+    # Ghi lại đúng những tín hiệu được lên sóng (top REPORT_TOP_N) để sau chấm đúng/sai.
+    if record and results:
+        try:
+            record_predictions(results[:REPORT_TOP_N])
+        except Exception as exc:
+            print(f"record_predictions failed: {exc}", file=sys.stderr)
     return build_report(results, errors)
 
 
