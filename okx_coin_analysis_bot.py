@@ -98,6 +98,20 @@ SEND_REPORT = os.getenv("OKX_SIGNAL_SEND_REPORT", "true").strip().lower() in {
     "1", "true", "yes", "y", "on",
 }
 
+# ── Bộ lọc chất lượng tín hiệu ───────────────────────────────────────────────
+# Chỉ GHI SỔ + LÊN SÓNG những tín hiệu đủ chuẩn, bỏ qua tín hiệu yếu/ép-phía —
+# đây chính là thứ kéo tỉ lệ đúng xuống (vd ép SHORT trong nhịp tăng). Tắt bằng
+# OKX_SIGNAL_QUALITY_FILTER=false để về hành vi cũ (ghi top-3 theo confidence).
+_TRUE = {"1", "true", "yes", "y", "on"}
+SIGNAL_QUALITY_FILTER = os.getenv("OKX_SIGNAL_QUALITY_FILTER", "true").strip().lower() in _TRUE
+SIGNAL_REJECT_FORCED = os.getenv("OKX_SIGNAL_QUALITY_REJECT_FORCED", "true").strip().lower() in _TRUE
+SIGNAL_MIN_TRADES = int(os.getenv("OKX_SIGNAL_QUALITY_MIN_TRADES", "8"))
+SIGNAL_MIN_WIN_RATE = float(os.getenv("OKX_SIGNAL_QUALITY_MIN_WIN_RATE", "50"))
+SIGNAL_MIN_CONFIDENCE = float(os.getenv("OKX_SIGNAL_QUALITY_MIN_CONFIDENCE", "55"))
+# Mặc định tắt (-999): hình học TP<SL khiến avg_return có thể âm dù WR cao, nên
+# KHÔNG lọc theo avg theo mặc định. Đặt vd 0 nếu muốn bắt buộc backtest có lãi.
+SIGNAL_MIN_AVG_RETURN = float(os.getenv("OKX_SIGNAL_QUALITY_MIN_AVG_RETURN", "-999"))
+
 
 @dataclass(frozen=True)
 class Candle:
@@ -150,6 +164,9 @@ class AnalysisResult:
     entry_ts: int = 0
     tp_price: float = 0.0
     sl_price: float = 0.0
+    # True khi phía được chọn KHÔNG đến từ edge điểm số rõ ràng (choose_side trả
+    # NEUTRAL) mà bị ép theo backtest tốt hơn — tín hiệu loại này dễ là rác.
+    forced_side: bool = False
 
 
 def env_bool(name: str, default: bool = False) -> bool:
@@ -586,6 +603,7 @@ def analyze_instrument(inst_id: str) -> AnalysisResult | None:
 
     long_bt, short_bt = backtest_both(candles, series)
     side = choose_side(score)
+    forced_side = side == "NEUTRAL"  # ép phía vì score 2 bên sàn sàn → tín hiệu yếu
 
     if side == "NEUTRAL":
         if long_bt.win_rate > short_bt.win_rate:
@@ -630,7 +648,46 @@ def analyze_instrument(inst_id: str) -> AnalysisResult | None:
         entry_ts=candles[-1].ts,
         tp_price=tp_price,
         sl_price=sl_price,
+        forced_side=forced_side,
     )
+
+
+def chosen_bt(result: AnalysisResult) -> BacktestResult:
+    """Backtest của ĐÚNG phía mà tín hiệu đề xuất (Long hay Short)."""
+    return result.long_bt if result.direction == "LONG" else result.short_bt
+
+
+def signal_quality_fails(result: AnalysisResult) -> list[str]:
+    """Liệt kê các lý do tín hiệu KHÔNG đạt chuẩn. Rỗng = đạt chuẩn.
+    Dùng để vừa lọc, vừa giải thích vì sao một coin bị loại."""
+    bt = chosen_bt(result)
+    fails: list[str] = []
+    if SIGNAL_REJECT_FORCED and result.forced_side:
+        fails.append("không có edge rõ (ép phía)")
+    if bt.trades < SIGNAL_MIN_TRADES:
+        fails.append(f"chỉ {bt.trades} mẫu (<{SIGNAL_MIN_TRADES})")
+    if bt.win_rate < SIGNAL_MIN_WIN_RATE:
+        fails.append(f"WR backtest {bt.win_rate:.0f}% (<{SIGNAL_MIN_WIN_RATE:.0f}%)")
+    if result.confidence < SIGNAL_MIN_CONFIDENCE:
+        fails.append(f"độ tin {result.confidence:.0f} (<{SIGNAL_MIN_CONFIDENCE:.0f})")
+    if bt.avg_return_pct < SIGNAL_MIN_AVG_RETURN:
+        fails.append(f"avg {bt.avg_return_pct:+.2f}% (<{SIGNAL_MIN_AVG_RETURN:+.2f}%)")
+    return fails
+
+
+def is_quality_signal(result: AnalysisResult) -> bool:
+    if not SIGNAL_QUALITY_FILTER:
+        return True
+    return not signal_quality_fails(result)
+
+
+def quality_standard_note() -> str:
+    """Một dòng tóm tắt chuẩn chất lượng đang áp dụng (cho báo cáo)."""
+    parts = [f"backtest WR≥{SIGNAL_MIN_WIN_RATE:.0f}%", f"≥{SIGNAL_MIN_TRADES} mẫu",
+             f"độ tin≥{SIGNAL_MIN_CONFIDENCE:.0f}"]
+    if SIGNAL_REJECT_FORCED:
+        parts.insert(0, "có edge rõ")
+    return " · ".join(parts)
 
 
 def fmt_price(value: float) -> str:
@@ -708,7 +765,7 @@ def chunk_text(text: str, max_len: int = 3900) -> Iterable[str]:
         yield remaining
 
 
-def build_report(results: list[AnalysisResult], errors: list[str]) -> str:
+def build_report(results: list[AnalysisResult], errors: list[str], filtered_out: int = 0) -> str:
     now = datetime.now(timezone(timedelta(hours=REPORT_TZ_OFFSET)))
     lines = [
         "🎯 OKX SIGNAL SHOW",
@@ -718,7 +775,13 @@ def build_report(results: list[AnalysisResult], errors: list[str]) -> str:
         "",
     ]
     if not results:
-        lines.append("Chưa có tín hiệu đủ đẹp để lên sóng.")
+        if SIGNAL_QUALITY_FILTER and filtered_out:
+            lines.append(
+                f"Cả {filtered_out} coin vừa scan đều CHƯA đạt chuẩn — thà im còn hơn phím ẩu."
+            )
+            lines.append(f"📏 Chuẩn: {quality_standard_note()}.")
+        else:
+            lines.append("Chưa có tín hiệu đủ đẹp để lên sóng.")
     for index, result in enumerate(results[:REPORT_TOP_N], 1):
         selected_bt = result.long_bt if result.direction == "LONG" else result.short_bt
         reason_text = "; ".join(compact_reason(reason) for reason in result.reasons[:3])
@@ -741,6 +804,10 @@ def build_report(results: list[AnalysisResult], errors: list[str]) -> str:
         lines.append("⚙ Một số coin scan lỗi:")
         for err in errors[:5]:
             lines.append(f"- {err}")
+        lines.append("")
+
+    if SIGNAL_QUALITY_FILTER and results and filtered_out:
+        lines.append(f"🔎 Đã lọc bỏ {filtered_out} coin chưa đạt chuẩn ({quality_standard_note()}).")
         lines.append("")
 
     lines.append("Nhắc nhẹ: tín hiệu là la bàn, không phải vé thắng. Quản trị vốn trước đã.")
@@ -1158,13 +1225,29 @@ def _collect_results() -> tuple[list[AnalysisResult], list[str]]:
 
 def generate_report(record: bool = True) -> str:
     results, errors = _collect_results()
+    # Lọc chất lượng: chỉ giữ tín hiệu đủ chuẩn để ghi sổ + lên sóng. Khi tắt bộ
+    # lọc, is_quality_signal luôn True nên quality == results (hành vi cũ).
+    quality = [r for r in results if is_quality_signal(r)]
+    filtered_out = len(results) - len(quality)
+    # Confidence hay bão hòa ở mức trần (95) cho nhiều coin → xếp thêm tiebreak theo
+    # chất lượng backtest của phía được chọn (WR rồi avg) để top ghi sổ là mạnh THẬT,
+    # không phải trúng nhờ thứ tự scan. round() giữ confidence là khóa chính.
+    quality.sort(
+        key=lambda r: (
+            round(r.confidence, 1),
+            chosen_bt(r).win_rate,
+            chosen_bt(r).avg_return_pct,
+            chosen_bt(r).trades,
+        ),
+        reverse=True,
+    )
     # Ghi lại đúng những tín hiệu được lên sóng (top REPORT_TOP_N) để sau chấm đúng/sai.
-    if record and results:
+    if record and quality:
         try:
-            record_predictions(results[:REPORT_TOP_N])
+            record_predictions(quality[:REPORT_TOP_N])
         except Exception as exc:
             print(f"record_predictions failed: {exc}", file=sys.stderr)
-    return build_report(results, errors)
+    return build_report(quality, errors, filtered_out=filtered_out)
 
 
 def sleep_until_next_run() -> None:

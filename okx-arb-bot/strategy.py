@@ -481,10 +481,16 @@ def sell_spot(spot_id, amount):
     if avail <= 0:
         log.warning(f"  [{ccy}] Spot balance = 0, bỏ qua sell {spot_id}")
         return True  # không có gì để bán, coi như đã đóng
+
+    min_sz, lot_sz = get_spot_info(spot_id)
+    if min_sz is None or lot_sz is None:
+        # Không xác định được minSz/lotSz sàn → KHÔNG đoán mù (có thể gửi sz sai bội số
+        # lotSz và bị 51020 lặp vô hạn). Backoff, thử lại sau khi đọc được instrument info.
+        log.warning(f"  [{ccy}] Không đọc được minSz/lotSz của {spot_id} — hoãn bán, thử lại sau")
+        return False
     # Dust DƯỚI minSz của sàn → KHÔNG thể đặt lệnh (51020). Coi như đã đóng để
     # tránh kẹt vòng lặp retry vĩnh viễn (vd: còn 0.000517 TON trong khi minSz=1).
-    min_sz, _ = get_spot_info(spot_id)
-    if min_sz is not None and avail < min_sz:
+    if avail < min_sz:
         log.warning(f"  [{ccy}] Spot còn {avail:.8f} < minSz {min_sz:g} → dust không bán được, coi như đã đóng {spot_id}")
         return True
     # Co lại số lượng nếu balance thực < amount yêu cầu (chênh do fee/dust)
@@ -492,13 +498,25 @@ def sell_spot(spot_id, amount):
         log.info(f"  [{ccy}] Spot avail={avail:.8f} < cần {amount:.8f} → bán {avail:.8f}")
         amount = avail * 0.9995  # buffer 0.05% tránh float boundary
 
+    # Fix bug 51020 lặp vô hạn (incident TON 19-23/06, unhedged 3.5 ngày): sàn từ chối
+    # sz KHÔNG phải bội số lotSz — avail đọc từ balance gần như không bao giờ tròn lotSz,
+    # nên lệnh bị từ chối GIỐNG HỆT mỗi lần retry. Phải làm tròn XUỐNG theo lotSz trước khi gửi.
+    if lot_sz > 0:
+        amount = math.floor(amount / lot_sz) * lot_sz
+    if amount < min_sz:
+        log.warning(f"  [{ccy}] Sau khi làm tròn lotSz {lot_sz:g} còn {amount:.8f} < minSz {min_sz:g} "
+                    f"→ dust không bán được, coi như đã đóng {spot_id}")
+        return True
+
+    sz_str = f"{amount:.8f}".rstrip('0').rstrip('.')
     r = trade_api.place_order(
         instId=spot_id, tdMode="cash",
-        side="sell", ordType="market", sz=str(round(amount, 8)),
+        side="sell", ordType="market", sz=sz_str,
     )
     if r.get('code') != '0':
         detail = (r.get('data') or [{}])[0]
-        log.error(f"  Spot sell lỗi {spot_id} [{detail.get('sCode')}]: {detail.get('sMsg') or r.get('msg')}")
+        log.error(f"  Spot sell lỗi {spot_id} [{detail.get('sCode')}]: {detail.get('sMsg') or r.get('msg')} "
+                  f"(avail={avail:.8f} minSz={min_sz:g} lotSz={lot_sz:g} sz_gửi={sz_str})")
         return False
     return True
 
