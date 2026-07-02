@@ -387,11 +387,17 @@ def open_position(opportunity, usdt_amount):
     _set_leverage(swap_id)
 
     # Mua spot bằng USDT
-    r_spot = trade_api.place_order(
-        instId=spot_id, tdMode="cash",
-        side="buy", ordType="market",
-        sz=str(spot_usdt), tgtCcy="quote_ccy",
-    )
+    # FIX (audit 07/2026): place_order gọi thẳng SDK có thể NÉM exception (timeout/5xx/mạng rớt),
+    # không chỉ trả code!=0. Chân spot exception TRƯỚC khi khớp → coi như chưa mua, abort an toàn.
+    try:
+        r_spot = trade_api.place_order(
+            instId=spot_id, tdMode="cash",
+            side="buy", ordType="market",
+            sz=str(spot_usdt), tgtCcy="quote_ccy",
+        )
+    except Exception as e:
+        log.error(f"  [{coin}] Spot buy NÉM EXCEPTION: {e} — abort, KHÔNG short.")
+        return None
     if r_spot.get('code') != '0':
         detail = (r_spot.get('data') or [{}])[0]
         log.error(f"  [{coin}] Spot buy lỗi [{detail.get('sCode')}]: {detail.get('sMsg') or r_spot.get('msg')}")
@@ -415,13 +421,34 @@ def open_position(opportunity, usdt_amount):
         sell_spot(spot_id, round(contracts * ct_val, 8))
         return None
 
+    # FIX (audit 07/2026): SIZE LẠI chân short theo lượng spot THỰC giữ, KHÔNG dùng full contracts
+    # kế hoạch. Nếu spot khớp thiếu/phí ăn nhiều mà vẫn short đủ contracts → short > spot = NET-SHORT,
+    # vỡ delta-neutral (lỗ khi giá lên). Làm tròn XUỐNG lotSz để |short| ≤ |spot|.
+    hedge_contracts = math.floor(round((coin_amount / ct_val) / lot_sz, 8)) * lot_sz
+    if hedge_contracts < min_sz:
+        log.error(f"  [{coin}] ⚠ Spot thực giữ {coin_amount:.8f} chỉ đủ {hedge_contracts:g} contracts "
+                  f"< minSz {min_sz:g} — abort, rollback spot.")
+        sell_spot(spot_id, coin_amount)
+        return None
+    contracts = hedge_contracts
+    sz_str    = _fmt_contracts(contracts, lot_sz)
+
     time.sleep(0.3)
 
     # Short futures isolated 1x
-    r_swap = trade_api.place_order(
-        instId=swap_id, tdMode="isolated",
-        side="sell", ordType="market", sz=sz_str,
-    )
+    # FIX (audit 07/2026): bọc try/except — exception SAU KHI spot đã mua mà không rollback = spot trần
+    # (unhedged) + crash loop. Bắt exception → rollback bán spot y như nhánh code!=0.
+    try:
+        r_swap = trade_api.place_order(
+            instId=swap_id, tdMode="isolated",
+            side="sell", ordType="market", sz=sz_str,
+        )
+    except Exception as e:
+        log.error(f"  [{coin}] Futures short NÉM EXCEPTION: {e} — hoàn spot để tránh unhedged...")
+        time.sleep(1)
+        if not sell_spot(spot_id, coin_amount):
+            log.critical(f"  [{coin}] ROLLBACK THẤT BẠI sau exception short — kiểm tra thủ công spot {spot_id}!")
+        return None
     if r_swap.get('code') != '0':
         detail = (r_swap.get('data') or [{}])[0]
         log.error(f"  [{coin}] Futures short lỗi [{detail.get('sCode')}]: {detail.get('sMsg') or r_swap.get('msg')} — hoàn spot...")

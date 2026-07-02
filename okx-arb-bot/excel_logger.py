@@ -27,7 +27,15 @@ COL_WIDTHS = [20, 8, 14, 16, 13, 15, 13, 14, 9, 21, 16]
 def _get_or_create_wb():
     path = os.path.join(_BASE, EXCEL_FILE)
     if os.path.exists(path):
-        return openpyxl.load_workbook(path)
+        wb = openpyxl.load_workbook(path)
+        # FIX (audit 07/2026): file cũ / bị công cụ ngoài sửa có thể KHÔNG có sheet 'Lời Lỗ' →
+        # wb["Lời Lỗ"] sẽ KeyError (nuốt trong offload → mất log mỗi 8h). Đảm bảo luôn có sheet đúng tên.
+        if "Lời Lỗ" not in wb.sheetnames:
+            ws = wb.active
+            ws.title = "Lời Lỗ"
+            if ws.cell(1, 1).value != HEADERS[0]:
+                _write_header(ws)
+        return wb
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Lời Lỗ"
@@ -51,7 +59,7 @@ def _write_header(ws):
 
 def log_pnl_snapshot(positions: list, pnl_list: list, usdt_balance: float):
     wb = _get_or_create_wb()
-    ws = wb["Lời Lỗ"]
+    ws = wb["Lời Lỗ"] if "Lời Lỗ" in wb.sheetnames else wb.active
     if ws.cell(1, 1).value != HEADERS[0]:
         _write_header(ws)
 
@@ -175,22 +183,25 @@ def export_json(live: dict = None):
         time_i = hdrs.index("Thời gian")       if "Thời gian"       in hdrs else -1
         bal_i  = hdrs.index("Số dư USDT ($)")  if "Số dư USDT ($)" in hdrs else -1
 
-        sum_rows = [r for r in rows if coin_i >= 0 and r[coin_i] == "TỔNG"]
-        if not sum_rows:
-            sum_rows = [r for r in rows if coin_i >= 0 and r[coin_i] not in ("", "TỔNG")]
-
-        cum = 0.0
-        for r in sum_rows:
-            v = float(r[pnl_i]) if pnl_i >= 0 and r[pnl_i] else 0
-            cum += v
-            chart['labels'].append(r[time_i] if time_i >= 0 else "")
-            chart['values'].append(round(cum, 4))
-
         if bal_i >= 0:
             for r in reversed(rows):
                 if r[bal_i]:
                     last_bal = r[bal_i]
                     break
+
+    # ── Equity curve: REALIZED PnL của trade ĐÃ ĐÓNG (đúng nghĩa cộng dồn) ──
+    # FIX (audit 07/2026): trước đây chart cộng dồn total_pnl của các SNAPSHOT vị thế đang mở
+    # (point-in-time) như thể là delta → phình to sai, over-report lãi trên dashboard công khai.
+    # analytics.equity_curve() cộng dồn net_pnl của trade đã đóng = số thực đã hiện thực hoá.
+    try:
+        import analytics
+        for pt in analytics.equity_curve():
+            ts = pt.get('ts')
+            label = datetime.fromtimestamp(ts).strftime('%d/%m %H:%M') if ts else ''
+            chart['labels'].append(label)
+            chart['values'].append(round(pt.get('cum_net_pnl', 0), 4))
+    except Exception:
+        pass  # không có DB / lỗi đọc → để chart rỗng, không phá dashboard
 
     # ── Che số dư khỏi file PUBLIC nếu bật DASH_HIDE_BALANCE ──
     if HIDE_BALANCE:

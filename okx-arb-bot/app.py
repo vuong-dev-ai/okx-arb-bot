@@ -28,7 +28,7 @@ from strategy import (
     open_position, close_position, sell_spot,
     check_exit_conditions, estimate_pnl, get_spot_price,
     get_okx_swap_positions, get_instrument_state, funding_payments_since, collectible_rate,
-    get_all_spot_balances,
+    get_all_spot_balances, get_swap_info,
     MIN_FUNDING_RATE, MIN_USDT, PRICE_STOP_PCT,
     ROUND_TRIP_FEE, FEE_SAFETY, ENTRY_MIN_SETTLEMENTS, EXIT_MIN_SETTLEMENTS,
     adaptive_position_pct, SCAN_COINS, validate_scan_coins,
@@ -387,6 +387,72 @@ def _reconcile_orphan_spot():
     return cleaned
 
 
+def _reconcile_adopt_untracked():
+    """FIX (audit 07/2026): 'nhận lại' vị thế ĐÃ HEDGE (swap SHORT + spot khớp) tồn tại trên OKX
+    nhưng KHÔNG có record local — xảy ra khi bot bị kill đúng khe giữa 'open_position xong' và
+    'append vào state + persist'. Không adopt thì vị thế này bị bỏ quản lý VĨNH VIỄN (không bao giờ
+    đóng theo funding_flip/price_stop, kẹt margin), vì reconcile thường chỉ duyệt local.
+
+    CHỈ adopt khi CẢ 3 đúng: coin ∈ SCAN_COINS, có swap SHORT (pos<0) trên OKX, VÀ có spot balance
+    khớp (≥50% notional swap ⇒ đã hedge). Không thoả (vd spot thiếu) → để _reconcile_orphan_spot xử lý.
+    Trường entry (open_time/entry_rate) tái dựng best-effort (open_time=now → funding tính bảo thủ,
+    KHÔNG over-report). Trả số vị thế đã adopt."""
+    okx_pos = get_okx_swap_positions()
+    if okx_pos is None:
+        return 0
+    balances = get_all_spot_balances()
+    if balances is None:
+        return 0
+    with _lock:
+        local_coins = {p['coin'] for p in _state['positions']}
+        closing     = set(_state['closing'])
+    adopted = 0
+    for coin, info in okx_pos.items():
+        if coin not in SCAN_COINS or coin in local_coins or coin in closing:
+            continue
+        if info['pos'] >= 0:
+            continue  # arb luôn SHORT swap; pos≥0 không phải vị thế của bot
+        swap_id = info['inst_id']
+        ct_val, min_sz, lot_sz = get_swap_info(swap_id)
+        if ct_val is None or not lot_sz:
+            continue
+        contracts  = abs(info['pos'])
+        spot_avail = balances.get(coin, 0.0)
+        if spot_avail < (contracts * ct_val) * 0.5:
+            continue  # spot không đủ hedge → KHÔNG phải arb đã hedge (orphan/khác lo)
+        entry_px = info['avg_px'] or _get_spot_price(f"{coin}-USDT")
+        if not entry_px:
+            continue
+        # entry_funding_rate: lấy rate hiện tại làm fallback (PnL thật vẫn ưu tiên bills)
+        try:
+            _, cur_rate = check_exit_conditions({'swap_id': swap_id, 'coin': coin})
+        except Exception:
+            cur_rate = None
+        pos = {
+            'coin':               coin,
+            'spot_id':            f"{coin}-USDT",
+            'swap_id':            swap_id,
+            'coin_amount':        round(spot_avail, 8),
+            'contracts':          contracts,
+            'lot_sz':             lot_sz,
+            'ct_val':             ct_val,
+            'entry_price':        entry_px,
+            'entry_funding_rate': cur_rate if cur_rate is not None else 0.0001,
+            'open_time':          time.time(),   # bảo thủ: không rõ mốc mở thật
+            '_adopted':           True,
+        }
+        analytics.record_open(pos)   # tạo record để close sau này ghi sổ khớp
+        with _lock:
+            _state['positions'].append(pos)
+        _persist_state()
+        adopted += 1
+        _log(f"[{coin}] ⚠ ADOPT vị thế hedge chưa tracked (swap {contracts:g} + spot {spot_avail:.6f}) — đưa vào quản lý")
+        notifier.notify_critical(
+            f"{coin}: phát hiện vị thế ĐÃ HEDGE trên sàn nhưng bot KHÔNG có record (nghi crash giữa "
+            f"mở lệnh & ghi state). Bot đã nhận lại để quản lý/đóng bình thường.", key=f"adopt-{coin}")
+    return adopted
+
+
 def _bot():
     last_scan = last_mon = last_excel = last_push = last_recon = last_tick_log = last_fund_chk = 0
     last_bal = last_ckpt = last_orphan = 0
@@ -417,6 +483,15 @@ def _bot():
         n = _reconcile_with_okx()
         if n:
             _log(f"Reconcile: xóa {n} vị thế phantom (không còn trên OKX)")
+
+    # FIX (audit 07/2026): nhận lại vị thế đã hedge trên sàn nhưng mất record local (crash giữa
+    # mở lệnh & ghi state) — chạy KỂ CẢ khi state.json trống.
+    try:
+        a = _reconcile_adopt_untracked()
+        if a:
+            _log(f"Adopt: nhận lại {a} vị thế hedge chưa tracked trên OKX")
+    except Exception as e:
+        _log(f"Lỗi adopt untracked lúc khởi động: {e}")
 
     with _lock:
         _state['usdt'] = get_available_usdt()
@@ -532,6 +607,13 @@ def _bot():
                     _log(f"Dọn {n} spot mồ côi (mua spot nhưng thiếu swap hedge)")
             except Exception as e:
                 _log(f"Lỗi quét spot mồ côi: {e}")
+            # FIX (audit 07/2026): nhận lại vị thế hedge chưa tracked (cùng nhịp với orphan-scan)
+            try:
+                a = _reconcile_adopt_untracked()
+                if a:
+                    _log(f"Adopt: nhận lại {a} vị thế hedge chưa tracked trên OKX")
+            except Exception as e:
+                _log(f"Lỗi adopt untracked: {e}")
             last_orphan = now
 
         # ── Scan cơ hội ───────────────────────────────────────────
@@ -613,7 +695,14 @@ def _bot():
                             hs = opp.get('hist_score', 0)
                             hs_tag = f" · score {hs:+.2f}" if hs else ''
                             _log(f"[{coin}] Vào lệnh ${amount:.2f} @ {opp['funding_rate']*100:.4f}%/8h{hs_tag}")
-                            pos = open_position(opp, amount)
+                            # FIX (audit 07/2026): bọc try/except — open_position có write-path gọi
+                            # API trực tiếp; nếu ném exception thì open_position tự rollback spot, nhưng
+                            # exception KHÔNG được để lan ra đá cả _bot() loop về restart (backoff 30-300s).
+                            try:
+                                pos = open_position(opp, amount)
+                            except Exception as e:
+                                _log(f"[{coin}] ⚠ Lỗi mở lệnh (đã bỏ qua, orphan-scan sẽ dọn spot nếu sót): {e}")
+                                pos = None
                         # (đã nhả khóa) — ghi sổ + cập nhật state ngoài khóa
                         if pos:
                             analytics.record_open(pos)
