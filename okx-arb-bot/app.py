@@ -31,7 +31,7 @@ from strategy import (
     get_all_spot_balances,
     MIN_FUNDING_RATE, MIN_USDT, PRICE_STOP_PCT,
     ROUND_TRIP_FEE, FEE_SAFETY, ENTRY_MIN_SETTLEMENTS, EXIT_MIN_SETTLEMENTS,
-    adaptive_position_pct, SCAN_COINS,
+    adaptive_position_pct, SCAN_COINS, validate_scan_coins,
     CAPITAL_FRACTION, CAPITAL_PER_NOTIONAL,
 )
 from cross_bot_lock import account_lock
@@ -394,6 +394,17 @@ def _bot():
     _my_thread = threading.current_thread()
 
     _log("━━━ Bot OKX Funding Arb khởi động ━━━")
+
+    # Lọc động coin đã delist/settle khỏi watchlist (vd TON 07/2026) TRƯỚC khi sub WS —
+    # tránh sub instrument chết (ws 51001/60018) và tránh cố mở lệnh trên coin không còn 'live'.
+    try:
+        dropped = validate_scan_coins()
+        if dropped:
+            _log(f"⚠ Loại {len(dropped)} coin đã delist/không 'live' khỏi watchlist: {', '.join(dropped)}")
+        _ws.instruments = [f"{c}-USDT" for c in SCAN_COINS]  # WS theo danh sách đã lọc
+    except Exception as e:
+        _log(f"⚠ validate_scan_coins lỗi (giữ nguyên watchlist): {e}")
+
     if _ws.start():
         _log(f"WebSocket realtime ticker → đang kết nối ({len(_ws.instruments)} sym)")
 

@@ -48,11 +48,13 @@ def funding_payments_since(open_ts, now_ts=None):
 SCAN_COINS = [
     "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX",
     "DOT", "LINK", "ARB", "OP", "SUI", "TRX", "ATOM",
-    "LTC", "BCH", "NEAR", "TON", "PEPE", "FLOKI",
+    "LTC", "BCH", "NEAR", "PEPE", "FLOKI",
     # Mở rộng watchlist (đều có CẢ spot lẫn swap trên OKX) — nhiều coin hơn ⇒ nhiều
     # cơ hội funding ≥ ngưỡng EV ⇒ lấp đủ MAX_POS=10 và tiến gần 20 lệnh/ngày khi funding rộng.
     # ⚠ DEMO: APT/TIA/SEI/WLD KHÔNG có SWAP trên paper-trading → đã bỏ (gây ws 60018 + scan phí REST). Thêm lại khi LIVE.
-    "INJ", "FIL", "AAVE", "LDO",
+    # ⚠ TON (delist cả spot+swap) & LDO (mất swap) trên DEMO 07/2026 → đã bỏ. TON delist giữa lúc
+    #   giữ vị thế chính là gốc sự cố unhedged 3.5 ngày (19-23/06). validate_scan_coins() lọc động khi khởi động.
+    "INJ", "FIL", "AAVE",
 ]
 
 # ── Ngưỡng vào/ra (đã chỉnh để KHÔNG churn lỗ phí) ──────────────────
@@ -261,6 +263,52 @@ def get_instrument_state(inst_id):
     except Exception as e:
         log.debug(f"Parse state {inst_id}: {e}")
     return None
+
+
+def _instrument_live(inst_type, inst_id):
+    """True nếu instrument TỒN TẠI và state=='live'; False nếu KHÔNG tồn tại (đã delist)
+    hoặc không 'live'; None nếu API fail (KHÔNG được kết luận 'chết' khi chỉ lỗi tạm thời)."""
+    resp = _retry(lambda: public_api.get_instruments(instType=inst_type, instId=inst_id),
+                  attempts=3, base_delay=0.3, what=f'inst-live {inst_id}')
+    if resp is None:
+        return None  # API fail → không kết luận
+    try:
+        data = resp.get('data') or []
+        if not data:
+            return False  # sàn trả rỗng (vd 51001) = instrument không còn
+        return data[0].get('state') == 'live'
+    except Exception as e:
+        log.debug(f"Parse inst-live {inst_id}: {e}")
+        return None
+
+
+def validate_scan_coins():
+    """Lọc SCAN_COINS lúc khởi động: chỉ GIỮ coin có CẢ spot lẫn swap còn 'live' trên sàn.
+
+    Gốc sự cố (TON 19-23/06): OKX delist/settle instrument giữa lúc bot đang giữ vị thế →
+    futures bị đóng 'bên ngoài' → bot mất hedge; đồng thời WS spam 51001/60018 mỗi reconnect
+    và bot vẫn cố mở lệnh trên instrument chết. Loại sớm các coin này ngăn tái diễn.
+
+    An toàn: coin API-fail (trả None) được GIỮ lại (không loại vì lỗi mạng tạm thời).
+    Mutate SCAN_COINS IN-PLACE để mọi consumer (scan, orphan-check, WS) thấy CÙNG danh sách.
+    Trả list coin đã loại."""
+    live, dropped, unknown = [], [], []
+    for c in SCAN_COINS:
+        s = _instrument_live("SPOT", f"{c}-USDT")
+        w = _instrument_live("SWAP", f"{c}-USDT-SWAP")
+        if s is False or w is False:
+            dropped.append(c)
+        else:
+            live.append(c)
+            if s is None or w is None:
+                unknown.append(c)
+        time.sleep(0.05)
+    if dropped:
+        log.warning(f"⚠ Loại {len(dropped)} coin không còn 'live' (spot+swap) trên sàn: {dropped}")
+    if unknown:
+        log.warning(f"⚠ Không đọc được trạng thái (API fail) — TẠM GIỮ, kiểm tra lại sau: {unknown}")
+    SCAN_COINS[:] = live  # in-place: giữ nguyên object mà app.py đã import
+    return dropped
 
 
 def _set_leverage(swap_id):
