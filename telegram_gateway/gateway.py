@@ -6,6 +6,7 @@ import logging
 import sys
 from datetime import time as _time, timezone, timedelta
 
+from telegram import BotCommand
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -35,9 +36,37 @@ def setup_logging():
         pass
 
 
+# Danh sách lệnh hiện trong nút Menu của Telegram (setMyCommands)
+BOT_COMMANDS = [
+    BotCommand('menu',      '🎛 Bảng điều khiển (nút bấm)'),
+    BotCommand('status',    '📉 Trạng thái bot + vị thế'),
+    BotCommand('positions', '📦 Chi tiết vị thế đang mở'),
+    BotCommand('balance',   '💰 Số dư + tổng tài sản'),
+    BotCommand('opps',      '🧲 Cơ hội funding đang scan'),
+    BotCommand('profit',    '📈 Tổng đã lời'),
+    BotCommand('daily',     '📅 PnL hôm nay'),
+    BotCommand('summary',   '📆 Báo cáo 7 ngày'),
+    BotCommand('stats',     '📊 Win rate, PF, net PnL'),
+    BotCommand('equity',    '💹 Biểu đồ equity'),
+    BotCommand('signals',   '🎯 Top 3 tín hiệu Long/Short'),
+    BotCommand('accuracy',  '✅ Tỉ lệ đúng/sai dự đoán'),
+    BotCommand('start_arb', '▶ Khởi động bot'),
+    BotCommand('stop_arb',  '⏸ Dừng bot (có xác nhận)'),
+    BotCommand('close_all', '🧹 Đóng tất cả vị thế (có xác nhận)'),
+    BotCommand('sync',      '🔄 Reconcile với OKX'),
+    BotCommand('dashboard', '🌐 Link web dashboard'),
+    BotCommand('help',      '📖 Danh sách lệnh đầy đủ'),
+]
+
+
 async def _post_init(app: Application):
-    """Sau khi PTB init xong, hiển thị banner."""
+    """Sau khi PTB init xong: đăng ký menu lệnh + hiển thị banner."""
     log = logging.getLogger('gateway')
+    try:
+        await app.bot.set_my_commands(BOT_COMMANDS)
+        log.info(f"Đã đăng ký {len(BOT_COMMANDS)} lệnh vào nút Menu Telegram")
+    except Exception as e:
+        log.warning(f"set_my_commands fail: {e}")
     log.info("━━━ Telegram Gateway online ━━━")
     log.info(f"Whitelist: {len(config.ALLOWED_CHAT_IDS)} chat IDs")
     log.info(f"Endpoints: {config.BOT_ENDPOINTS}")
@@ -69,6 +98,9 @@ def build_app() -> Application:
     h(CommandHandler('status',       commands.cmd_status))
     h(CommandHandler('positions',    commands.cmd_positions))
     h(CommandHandler('balance',      commands.cmd_balance))
+    h(CommandHandler('opps',         commands.cmd_opps))
+    h(CommandHandler('profit',       commands.cmd_profit))
+    h(CommandHandler('dashboard',    commands.cmd_dashboard))
     h(CommandHandler('stats',        commands.cmd_stats))
     h(CommandHandler('equity',       commands.cmd_equity))
     h(CommandHandler('daily',        commands.cmd_daily))

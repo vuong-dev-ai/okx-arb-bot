@@ -17,6 +17,7 @@ import clients
 from config import (
     ALLOWED_CHAT_IDS,
     DD_THRESHOLD, PROFIT_THRESHOLD,
+    DASHBOARD_URL,
 )
 
 log = logging.getLogger(__name__)
@@ -139,10 +140,13 @@ def _format_status(bot: str, data: dict) -> str:
         return f"<b>{bot.upper()}</b>: ❌ không phản hồi"
     running   = '▶ chạy' if data.get('running') else '⏸ dừng'
     usdt      = data.get('usdt') or 0
+    teq       = data.get('total_eq') or 0
     positions = data.get('positions') or []
     upd       = _esc(data.get('last_update', '-'))
+    teq_s = f" · 💰 ${teq:,.2f}" if teq else ''
     lines = [
-        f"<b>{bot.upper()}</b> · {running} · 💵 ${usdt:.2f} · ⏱ {upd}",
+        f"<b>{bot.upper()}</b> · {running} · ⏱ {upd}",
+        f"💵 Khả dụng ${usdt:,.2f}{teq_s}",
         f"📦 {len(positions)} vị thế",
     ]
     for p in positions[:10]:
@@ -241,7 +245,9 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "<b>📊 Xem trạng thái</b>\n"
         "/status — bot + vị thế\n"
         "/positions — chi tiết vị thế\n"
-        "/balance — USDT khả dụng\n"
+        "/balance — USDT khả dụng + tổng tài sản\n"
+        "/opps — cơ hội funding đang scan\n"
+        "/profit — tổng đã lời (chốt + đang mở)\n"
         "/stats — win rate, PF, net PnL, fee\n"
         "/equity — biểu đồ equity (net)\n"
         "/daily — báo cáo PnL hôm nay (net, sau fee)\n"
@@ -256,27 +262,40 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "/sync — reconcile với OKX\n\n"
         "<b>🔧 Khác</b>\n"
         "/menu — bảng nút inline\n"
+        "/dashboard — link web dashboard\n"
         "/ping — check gateway còn sống"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
 
+def _menu_keyboard() -> InlineKeyboardMarkup:
+    kb = [
+        [InlineKeyboardButton("📉 Status",         callback_data="status:arb"),
+         InlineKeyboardButton("📦 Vị thế",         callback_data="positions:arb")],
+        [InlineKeyboardButton("💰 Số dư",          callback_data="balance:arb"),
+         InlineKeyboardButton("🧲 Cơ hội funding", callback_data="opps:arb")],
+        [InlineKeyboardButton("📈 Tổng đã lời",    callback_data="profit:arb"),
+         InlineKeyboardButton("💹 Equity chart",   callback_data="equity:arb")],
+        [InlineKeyboardButton("📅 Hôm nay",        callback_data="daily:arb"),
+         InlineKeyboardButton("📆 7 ngày",         callback_data="summary:arb")],
+        [InlineKeyboardButton("🎯 Top 3 signals",  callback_data="signals:okx"),
+         InlineKeyboardButton("📊 Tỉ lệ đúng/sai", callback_data="accuracy:okx")],
+        [InlineKeyboardButton("▶ Start bot",       callback_data="start:arb"),
+         InlineKeyboardButton("⏸ Stop bot",        callback_data="stop:arb")],
+        [InlineKeyboardButton("🔄 Sync OKX",       callback_data="sync:arb"),
+         InlineKeyboardButton("🧹 Đóng tất cả",    callback_data="closeall:arb")],
+    ]
+    if DASHBOARD_URL:
+        kb.append([InlineKeyboardButton("🌐 Mở Dashboard", url=DASHBOARD_URL)])
+    return InlineKeyboardMarkup(kb)
+
+
 @auth
 async def cmd_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    kb = [
-        [InlineKeyboardButton("🎯 Top 3 signals", callback_data="signals:okx"),
-         InlineKeyboardButton("📊 Tỉ lệ đúng/sai", callback_data="accuracy:okx")],
-        [InlineKeyboardButton("📉 Arb status",    callback_data="status:arb"),
-         InlineKeyboardButton("📊 Arb stats",     callback_data="stats:arb")],
-        [InlineKeyboardButton("💹 Arb equity",    callback_data="equity:arb"),
-         InlineKeyboardButton("🔄 Sync arb",      callback_data="sync:arb")],
-        [InlineKeyboardButton("▶ Start arb",      callback_data="start:arb"),
-         InlineKeyboardButton("⏸ Stop arb",       callback_data="stop:arb")],
-    ]
     await update.message.reply_text(
         "<b>Bảng điều khiển</b>",
         parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(kb),
+        reply_markup=_menu_keyboard(),
     )
 
 
@@ -311,10 +330,7 @@ async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text('\n\n'.join(blocks), parse_mode=ParseMode.HTML)
 
 
-@auth
-async def cmd_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    bot = _bot_arg(ctx.args, default='all')
-    targets = _BOTS if bot == 'all' else (bot,)
+async def _positions_text(targets=_BOTS) -> str:
     out = []
     for b in targets:
         data = await clients.status(b)
@@ -335,17 +351,99 @@ async def cmd_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"  {emoji} <code>{coin}</code> net {net:+.2f}$ ({pct:+.2f}%)\n"
                 f"     entry={entry:.4f} · cur={cur:.4f} · funding {fund:+.2f}$ ({npay}x)"
             )
-    await update.message.reply_text('\n'.join(out), parse_mode=ParseMode.HTML)
+    return '\n'.join(out)
 
 
 @auth
-async def cmd_balance(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def cmd_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    bot = _bot_arg(ctx.args, default='all')
+    targets = _BOTS if bot == 'all' else (bot,)
+    await update.message.reply_text(await _positions_text(targets), parse_mode=ParseMode.HTML)
+
+
+async def _balance_text() -> str:
     out = []
     for b in _BOTS:
         d = await clients.status(b)
         usdt = (d or {}).get('usdt') or 0
-        out.append(f"<b>{b.upper()}</b>: ${usdt:.2f}")
-    await update.message.reply_text(' · '.join(out), parse_mode=ParseMode.HTML)
+        teq  = (d or {}).get('total_eq') or 0
+        out.append(f"<b>{b.upper()}</b>\n💵 USDT khả dụng: ${usdt:,.2f}")
+        if teq:
+            out.append(f"💰 Tổng tài sản: <b>${teq:,.2f}</b>\n"
+                       f"<i>(gồm spot chân long + margin swap)</i>")
+    return '\n'.join(out)
+
+
+@auth
+async def cmd_balance(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(await _balance_text(), parse_mode=ParseMode.HTML)
+
+
+async def _opps_text() -> str:
+    d = await clients.status('arb')
+    if not d:
+        return "<b>ARB</b>: ❌ không phản hồi"
+    opps = d.get('opps') or []
+    min_rate = d.get('min_rate') or 0.0012
+    held = {p.get('coin') for p in (d.get('positions') or [])}
+    lines = [f"🧲 <b>Cơ hội funding</b> (ngưỡng vào ≥ {min_rate*100:.2f}%/8h)"]
+    if not opps:
+        lines.append("(chưa có dữ liệu scan)")
+    for o in opps[:10]:
+        coin = o.get('coin')
+        rate = o.get('rate') or 0
+        apy  = o.get('apy') or 0
+        if coin in held:
+            mark = '📦'   # đã giữ vị thế coin này
+        elif rate >= min_rate:
+            mark = '🟢'   # đủ ngưỡng, có thể vào
+        else:
+            mark = '⚪'
+        lines.append(f"  {mark} <code>{_esc(coin)}</code> {rate*100:.4f}%/8h · APY {apy:.1f}%")
+    lines.append("\n📦 đang giữ · 🟢 đủ ngưỡng · ⚪ dưới ngưỡng")
+    return '\n'.join(lines)
+
+
+@auth
+async def cmd_opps(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(await _opps_text(), parse_mode=ParseMode.HTML)
+
+
+async def _profit_text() -> str:
+    d  = await clients.analytics('arb')
+    st = await clients.status('arb')
+    g  = (d or {}).get('global') or {}
+    n_closed   = g.get('n') or 0
+    net_closed = g.get('total_net_pnl') or g.get('total_pnl') or 0
+    ps = (st or {}).get('positions') or []
+    net_open = sum((p.get('net_pnl') or 0) for p in ps)
+    teq = (st or {}).get('total_eq') or 0
+    lines = [
+        "💰 <b>Tổng đã lời (ARB)</b>",
+        f"Đã chốt ({n_closed} lệnh): <b>{net_closed:+,.2f}$</b>",
+        f"Đang mở ({len(ps)} vị thế): {net_open:+,.2f}$",
+        f"━━━━━━━━━━━━",
+        f"Tổng: <b>{net_closed + net_open:+,.2f}$</b>",
+    ]
+    if teq:
+        lines.append(f"Tổng tài sản: ${teq:,.2f}")
+    return '\n'.join(lines)
+
+
+@auth
+async def cmd_profit(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(await _profit_text(), parse_mode=ParseMode.HTML)
+
+
+@auth
+async def cmd_dashboard(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if DASHBOARD_URL:
+        await update.message.reply_text(
+            f"🌐 Dashboard: {DASHBOARD_URL}\n<i>(đăng nhập basic-auth)</i>",
+            parse_mode=ParseMode.HTML,
+        )
+    else:
+        await update.message.reply_text("Chưa cấu hình GATEWAY_DASHBOARD_URL.")
 
 
 @auth
@@ -402,10 +500,31 @@ async def _ctrl(update: Update, action: str, bot: str):
     )
 
 
+def _confirm_kb(action: str, bot: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ Xác nhận", callback_data=f"{action}ok:{bot}"),
+        InlineKeyboardButton("❌ Huỷ",      callback_data="cancel:_"),
+    ]])
+
+
+_CONFIRM_TEXT = {
+    'stop':     "⚠ <b>Dừng bot?</b>\nBot sẽ tự đóng TẤT CẢ vị thế đang mở.",
+    'closeall': "⚠ <b>Đóng tất cả vị thế?</b>\nMọi vị thế delta-neutral sẽ được đóng (cả spot lẫn swap).",
+}
+
+
+async def _ask_confirm(message, action: str, bot: str = 'arb'):
+    await message.reply_text(
+        _CONFIRM_TEXT[action],
+        parse_mode=ParseMode.HTML,
+        reply_markup=_confirm_kb(action, bot),
+    )
+
+
 @auth
 async def cmd_start_arb(update, ctx):   await _ctrl(update, 'start', 'arb')
 @auth
-async def cmd_stop_arb(update, ctx):    await _ctrl(update, 'stop',  'arb')
+async def cmd_stop_arb(update, ctx):    await _ask_confirm(update.effective_message, 'stop')
 
 
 @auth
@@ -438,20 +557,23 @@ async def cmd_close(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
 
-@auth
-async def cmd_close_all(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    bot = 'arb'
+async def _do_close_all(message, bot: str = 'arb'):
     r = await clients.close_all(bot)
     if not r:
-        await update.message.reply_text(f"⚠ {bot.upper()} không phản hồi")
+        await message.reply_text(f"⚠ {bot.upper()} không phản hồi")
         return
     n = r.get('closed', 0)
-    await update.message.reply_text(
+    await message.reply_text(
         f"⏳ <b>{bot.upper()}</b> đã NHẬN lệnh đóng {n} vị thế — đang xử lý nền.\n"
         f"Sẽ báo riêng từng coin khi đóng XONG (✅) hoặc khi KHÔNG đóng được (🚨, vd market đóng cửa).\n"
         f"<i>Tin này KHÔNG có nghĩa đã đóng — kiểm tra /status để xác nhận.</i>",
         parse_mode=ParseMode.HTML,
     )
+
+
+@auth
+async def cmd_close_all(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await _ask_confirm(update.effective_message, 'closeall')
 
 
 @auth
@@ -462,8 +584,7 @@ async def cmd_sync(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _ctrl(update, 'sync', b)
 
 
-@auth
-async def cmd_daily(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def _daily_text() -> str:
     from datetime import timezone, timedelta, time as _time
     vn_tz    = timezone(timedelta(hours=7))
     today_vn = datetime.now(vn_tz).date()
@@ -486,11 +607,15 @@ async def cmd_daily(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             roi   = t.get('net_roi_pct') or t.get('roi_pct') or 0
             emo   = '🟢' if net_t >= 0 else '🔴'
             out.append(f"  {emo} <code>{coin}</code> net {net_t:+.2f}$ ({roi:+.2f}%)")
-    await update.message.reply_text('\n'.join(out), parse_mode=ParseMode.HTML)
+    return '\n'.join(out)
 
 
 @auth
-async def cmd_summary(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def cmd_daily(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(await _daily_text(), parse_mode=ParseMode.HTML)
+
+
+async def _summary_text() -> str:
     import time as _t
     cutoff = _t.time() - 7 * 86400
     out = ["📆 <b>Báo cáo 7 ngày</b>"]
@@ -516,7 +641,12 @@ async def cmd_summary(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"\n<b>{b.upper()}</b> · {n}T · WR {wr:.0f}%{streak_s}\n"
             f"Gross {gross:+.2f}$ · Fee -{abs(fee):.2f}$ · Net <b>{net:+.2f}$</b>"
         )
-    await update.message.reply_text('\n'.join(out), parse_mode=ParseMode.HTML)
+    return '\n'.join(out)
+
+
+@auth
+async def cmd_summary(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(await _summary_text(), parse_mode=ParseMode.HTML)
 
 
 # ════════════════════ CALLBACK (inline keyboard) ════════════════════
@@ -535,6 +665,18 @@ async def cb_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif action == 'status':
         data = await clients.status(bot)
         await q.message.reply_text(_format_status(bot, data), parse_mode=ParseMode.HTML)
+    elif action == 'positions':
+        await q.message.reply_text(await _positions_text(), parse_mode=ParseMode.HTML)
+    elif action == 'balance':
+        await q.message.reply_text(await _balance_text(), parse_mode=ParseMode.HTML)
+    elif action == 'opps':
+        await q.message.reply_text(await _opps_text(), parse_mode=ParseMode.HTML)
+    elif action == 'profit':
+        await q.message.reply_text(await _profit_text(), parse_mode=ParseMode.HTML)
+    elif action == 'daily':
+        await q.message.reply_text(await _daily_text(), parse_mode=ParseMode.HTML)
+    elif action == 'summary':
+        await q.message.reply_text(await _summary_text(), parse_mode=ParseMode.HTML)
     elif action == 'stats':
         data = await clients.analytics(bot)
         await q.message.reply_text(_format_analytics(bot, data), parse_mode=ParseMode.HTML)
@@ -547,7 +689,18 @@ async def cb_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 caption=f"💹 <b>{bot.upper()}</b>", parse_mode=ParseMode.HTML)
         else:
             await q.message.reply_text(f"{bot.upper()}: chưa có equity")
-    elif action in ('start', 'stop', 'sync'):
+    # ── Hành động nguy hiểm: hỏi xác nhận trước ──
+    elif action in ('stop', 'closeall'):
+        await _ask_confirm(q.message, action, bot)
+    elif action == 'cancel':
+        await q.edit_message_text("❌ Đã huỷ.")
+    elif action == 'stopok':
+        await q.edit_message_text("⏸ Đang dừng bot...")
+        await _ctrl(update, 'stop', bot)
+    elif action == 'closeallok':
+        await q.edit_message_text("🧹 Đang gửi lệnh đóng tất cả...")
+        await _do_close_all(q.message, bot)
+    elif action in ('start', 'sync'):
         await _ctrl(update, action, bot)
 
 

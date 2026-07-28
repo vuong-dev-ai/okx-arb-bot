@@ -860,7 +860,8 @@ def _build_status_payload():
         })
 
     return {
-        'running': running, 'usdt': usdt, 'total_eq': teq, 'positions': out_ps,
+        'running': running, 'usdt': usdt, 'total_eq': teq, 'min_rate': MIN_FUNDING_RATE,
+        'positions': out_ps,
         'opps':    [{'coin': o['coin'], 'rate': o['funding_rate'],
                      'apy': o['annualized'], 'next': o['next_rate']} for o in opps],
         'logs': logs, 'last_update': upd,

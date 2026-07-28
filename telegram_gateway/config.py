@@ -50,6 +50,9 @@ BOT_ENDPOINTS = {
     'arb':   os.getenv("GATEWAY_ARB_URL",   "http://localhost:5000").rstrip('/'),
 }
 
+# URL dashboard công khai (nginx basic-auth) — hiện nút 🌐 trong /menu nếu có
+DASHBOARD_URL = os.getenv("GATEWAY_DASHBOARD_URL", "").strip()
+
 DAILY_HOUR        = int(os.getenv("GATEWAY_DAILY_HOUR", "22"))
 ALERT_INTERVAL    = int(os.getenv("GATEWAY_ALERT_INTERVAL", "300"))
 DD_THRESHOLD      = float(os.getenv("GATEWAY_DD_THRESHOLD", "-5"))
