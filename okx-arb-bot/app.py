@@ -1038,13 +1038,14 @@ def deploy():
 
 
 if __name__ == '__main__':
+    _port = int(os.getenv('DASH_PORT', '5000'))
     print("\n" + "="*50)
     print("  OKX Arb Bot — Web Dashboard")
-    print("  Mở trình duyệt: http://localhost:5000")
+    print(f"  Mở trình duyệt: http://localhost:{_port}")
     print("="*50 + "\n")
     # AUTO_START_BOT=true → tự bật bot khi Flask khởi động (không cần curl /api/start).
     # Giúp systemd Restart=always tự hồi phục hoàn toàn mà không phụ thuộc ExecStartPost.
     if os.getenv('AUTO_START_BOT', '').strip().lower() in ('1', 'true', 'yes'):
         if _start_bot():
             print("  AUTO_START_BOT=true → bot đã tự khởi động")
-    app.run(host=os.getenv('BIND_HOST', '127.0.0.1'), port=5000, debug=False, use_reloader=False, threaded=True)
+    app.run(host=os.getenv('BIND_HOST', '127.0.0.1'), port=_port, debug=False, use_reloader=False, threaded=True)

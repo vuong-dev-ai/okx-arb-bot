@@ -811,23 +811,40 @@ function renderReco(g, coins) {
 /* ════════════════════════════════════════════════════════════════
    CONTROLS
    ════════════════════════════════════════════════════════════════ */
+/* POST kèm X-Dash-Token (cần khi vào từ ngoài, không phải localhost).
+   Token lưu localStorage; gặp 401 thì hỏi lại rồi retry 1 lần. */
+async function apiPost(url) {
+  const hdr = () => {
+    const t = localStorage.getItem('dashToken');
+    return t ? {'X-Dash-Token': t} : {};
+  };
+  let r = await fetch(url, {method:'POST', headers: hdr()});
+  if (r.status === 401) {
+    const t = prompt('Nhập DASH_TOKEN để điều khiển bot:');
+    if (t === null) return r;
+    localStorage.setItem('dashToken', t.trim());
+    r = await fetch(url, {method:'POST', headers: hdr()});
+    if (r.status === 401) { alert('Token sai — thao tác bị từ chối.'); localStorage.removeItem('dashToken'); }
+  }
+  return r;
+}
 async function startBot() {
   const b = document.getElementById('btn-start'); b.disabled = true;
-  try { const r = await fetch('/api/start', {method:'POST'}); const d = await r.json(); if (!d.ok) alert(d.msg); }
+  try { const r = await apiPost('/api/start'); if (r.ok) { const d = await r.json(); if (!d.ok) alert(d.msg); } }
   finally { b.disabled = false; }
 }
 async function stopBot() {
   if (!confirm('Dừng bot?\nBot sẽ tự động đóng tất cả vị thế đang mở.')) return;
-  await fetch('/api/stop', {method:'POST'});
+  await apiPost('/api/stop');
 }
 async function closePos(coin) {
   if (!confirm(`Đóng vị thế ${coin}?`)) return;
-  await fetch(`/api/close/${coin}`, {method:'POST'});
+  await apiPost(`/api/close/${coin}`);
 }
 async function syncOkx() {
   const b = document.getElementById('btn-sync');
   if (b) b.disabled = true;
-  try { const r = await fetch('/api/sync', {method:'POST'}); const d = await r.json(); alert(d.msg || (d.ok?'Sync OK':'Sync lỗi')); }
+  try { const r = await apiPost('/api/sync'); if (r.ok) { const d = await r.json(); alert(d.msg || (d.ok?'Sync OK':'Sync lỗi')); } }
   catch(e) { alert('Sync lỗi: ' + e); }
   finally { if (b) b.disabled = false; }
 }
