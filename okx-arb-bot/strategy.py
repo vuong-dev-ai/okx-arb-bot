@@ -159,6 +159,27 @@ def get_available_usdt():
     return 0.0
 
 
+def get_balance_snapshot():
+    """(USDT khả dụng, tổng tài sản totalEq USD) — MỘT call cho cả hai.
+
+    totalEq gồm cả spot đang giữ (chân long NEAR/FIL...) + margin & uPL của swap,
+    nên khớp số "Giá trị vốn chủ sở hữu" trên app OKX; usdt khả dụng luôn nhỏ hơn
+    khi có vị thế mở. totalEq=0 nghĩa là parse fail — caller giữ giá trị cũ."""
+    resp = _retry(lambda: account_api.get_account_balance(ccy="USDT"),
+                  attempts=3, base_delay=0.3, what='account_balance')
+    avail = total = 0.0
+    try:
+        if resp and resp.get('code') == '0':
+            d0 = resp['data'][0]
+            total = float(d0.get('totalEq') or 0)
+            for d in d0.get('details', []):
+                if d['ccy'] == 'USDT':
+                    avail = float(d['availEq'])
+    except Exception as e:
+        log.error(f"Parse số dư: {e}")
+    return avail, total
+
+
 def get_funding_income(swap_id, since_ts):
     """Tổng funding THỰC NHẬN (USDT) cho swap_id kể từ since_ts, đọc từ OKX bills (type=8).
 

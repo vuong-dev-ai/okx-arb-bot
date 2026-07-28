@@ -200,7 +200,7 @@ body{overflow-x:hidden}
     <div class="stat">
       <div class="stat-label">Số dư khả dụng</div>
       <div id="s-usdt" class="stat-value">$—</div>
-      <div id="s-usdt-sub" class="stat-sub">USDT · Available equity</div>
+      <div id="s-usdt-sub" class="stat-sub">Tổng tài sản: $—</div>
       <div class="stat-spark"><canvas id="spark-usdt"></canvas></div>
       <div class="stat-accent"></div>
     </div>
@@ -473,6 +473,8 @@ function updateDashboard(d) {
   setStat('s-usdt', '$' + fmtN(d.usdt, 2), d.usdt, prev.usdt);
   prev.usdt = d.usdt;
   pushSpark('usdt', d.usdt);
+  document.getElementById('s-usdt-sub').textContent =
+    d.total_eq > 0 ? `Tổng tài sản: $${fmtN(d.total_eq, 2)}` : 'Tổng tài sản: $—';
 
   document.getElementById('s-pos').innerHTML =
     `${ps.length} <span style="color:var(--ink-3);font-size:22px;font-weight:300;font-family:'Cormorant Garamond',serif"> / 3</span>`;

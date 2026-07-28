@@ -24,7 +24,7 @@ import openpyxl
 from flask import Flask, jsonify, render_template, Response, stream_with_context, request, abort
 
 from strategy import (
-    get_funding_rates, get_available_usdt, get_funding_income,
+    get_funding_rates, get_available_usdt, get_balance_snapshot, get_funding_income,
     open_position, close_position, sell_spot,
     check_exit_conditions, estimate_pnl, get_spot_price,
     get_okx_swap_positions, get_instrument_state, funding_payments_since, collectible_rate,
@@ -77,6 +77,7 @@ _state = {
     'positions':     [],
     'opportunities': [],
     'usdt':          0.0,
+    'total_eq':      0.0,     # tổng tài sản (totalEq USD) — gồm spot chân long + margin swap
     'log':           [],
     'last_update':   '-',
     'closing':       set(),   # coin đang trong tiến trình đóng (chống double-close)
@@ -493,9 +494,12 @@ def _bot():
     except Exception as e:
         _log(f"Lỗi adopt untracked lúc khởi động: {e}")
 
+    _bal0, _teq0 = get_balance_snapshot()   # ngoài lock: tránh giữ lock khi gọi mạng
     with _lock:
-        _state['usdt'] = get_available_usdt()
-    _log(f"Số dư: ${_state['usdt']:.2f} USDT")
+        _state['usdt'] = _bal0
+        if _teq0 > 0:
+            _state['total_eq'] = _teq0
+    _log(f"Số dư: ${_bal0:.2f} USDT khả dụng · tổng tài sản ${_teq0:.2f}")
 
     while True:
         with _lock:
@@ -578,9 +582,11 @@ def _bot():
 
             # Số dư đọc thưa hơn (REST) — không cần realtime như giá
             if now - last_bal >= BAL_INT:
-                bal = get_available_usdt()      # ngoài lock: tránh giữ lock khi gọi mạng
+                bal, teq = get_balance_snapshot()   # ngoài lock: tránh giữ lock khi gọi mạng
                 with _lock:
                     _state['usdt'] = bal
+                    if teq > 0:
+                        _state['total_eq'] = teq
                 last_bal = now
             with _lock:
                 _state['last_update'] = datetime.now().strftime('%H:%M:%S')
@@ -826,6 +832,7 @@ def _build_status_payload():
         ps      = list(_state['positions'])
         opps    = list(_state['opportunities'])
         usdt    = _state['usdt']
+        teq     = _state['total_eq']
         running = _state['running']
         upd     = _state['last_update']
         logs    = list(_state['log'][-120:])
@@ -853,7 +860,7 @@ def _build_status_payload():
         })
 
     return {
-        'running': running, 'usdt': usdt, 'positions': out_ps,
+        'running': running, 'usdt': usdt, 'total_eq': teq, 'positions': out_ps,
         'opps':    [{'coin': o['coin'], 'rate': o['funding_rate'],
                      'apy': o['annualized'], 'next': o['next_rate']} for o in opps],
         'logs': logs, 'last_update': upd,
