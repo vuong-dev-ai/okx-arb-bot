@@ -49,20 +49,12 @@ cd D:\PYTHON\telegram_gateway && python gateway.py
 
 | Lệnh | Mô tả |
 |---|---|
-| `/start`, `/help` | Giới thiệu, danh sách lệnh |
-| `/menu` | Bảng nút inline |
-| `/ping` | Kiểm tra gateway + bot |
-| `/status` | Tóm tắt bot + vị thế |
-| `/positions` | Chi tiết vị thế |
-| `/balance` | USDT khả dụng |
-| `/stats` | Win rate, profit factor, top coins |
-| `/equity` | Biểu đồ equity (PNG qua quickchart.io) |
-| `/daily` | Báo cáo PnL hôm nay |
-| `/summary` | Báo cáo 7 ngày |
-| `/start_arb`, `/stop_arb` | Điều khiển arb bot |
-| `/close <coin>` | VD `/close BTC` |
-| `/close_all` | Đóng tất cả vị thế |
-| `/sync` | Reconcile với OKX |
+| `/menu` | Bảng lệnh được phép dùng |
+| `/web` | Cấp tài khoản/mật khẩu web tạm thời |
+| `/help` | Danh sách lệnh khả dụng |
+| `/dsquyen` | Xem danh sách quyền |
+| `/capquyen <id>` | Cấp quyền xem |
+| `/thuquyen <id>` | Thu quyền xem |
 
 ## Scheduler
 
@@ -95,12 +87,11 @@ Lấy `file_id` của sticker: gửi sticker đó cho [@RawDataBot](https://t.me
 
 ## Bảo mật
 
-- Chỉ `TELEGRAM_ALLOWED_CHAT_IDS` mới gọi được command — mọi handler có auth decorator.
-- Mọi chat_id ngoài whitelist nhận phản hồi "⛔ không có quyền".
+- Chủ bot nằm trong `TELEGRAM_ALLOWED_CHAT_IDS`; người chỉ xem được lưu trong `viewers.json` hoặc `TELEGRAM_VIEWER_CHAT_IDS`.
+- Lệnh quản lý quyền chỉ chủ bot dùng được; các chat_id ngoài danh sách quyền nhận phản hồi "⛔ không có quyền".
 - Gateway chỉ gọi HTTP localhost của bot — không expose ra ngoài. Nếu chạy trên server, đóng port 5000 trên firewall.
 
 ## Troubleshooting
 
 - **"Conflict: terminated by other getUpdates"**: bạn đang chạy >1 process cùng token. Kill các process cũ.
 - **GIF/animation không hiện**: URL phải trỏ thẳng tới file `.gif` công khai (không phải landing page). Test bằng cách paste URL vào trình duyệt — phải tự load GIF.
-- **`/equity` không gửi được ảnh**: quickchart.io free tier giới hạn rate. Self-host nếu cần.

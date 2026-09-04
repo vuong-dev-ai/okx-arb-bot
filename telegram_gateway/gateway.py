@@ -10,7 +10,6 @@ from telegram import BotCommand
 from telegram.ext import (
     Application,
     CommandHandler,
-    CallbackQueryHandler,
 )
 
 import config
@@ -38,24 +37,12 @@ def setup_logging():
 
 # Danh sách lệnh hiện trong nút Menu của Telegram (setMyCommands)
 BOT_COMMANDS = [
-    BotCommand('menu',      '🎛 Bảng điều khiển (nút bấm)'),
-    BotCommand('status',    '📉 Trạng thái bot + vị thế'),
-    BotCommand('positions', '📦 Chi tiết vị thế đang mở'),
-    BotCommand('balance',   '💰 Số dư + tổng tài sản'),
-    BotCommand('opps',      '🧲 Cơ hội funding đang scan'),
-    BotCommand('profit',    '📈 Tổng đã lời'),
-    BotCommand('daily',     '📅 PnL hôm nay'),
-    BotCommand('summary',   '📆 Báo cáo 7 ngày'),
-    BotCommand('stats',     '📊 Win rate, PF, net PnL'),
-    BotCommand('equity',    '💹 Biểu đồ equity'),
-    BotCommand('signals',   '🎯 Top 3 tín hiệu Long/Short'),
-    BotCommand('accuracy',  '✅ Tỉ lệ đúng/sai dự đoán'),
-    BotCommand('start_arb', '▶ Khởi động bot'),
-    BotCommand('stop_arb',  '⏸ Dừng bot (có xác nhận)'),
-    BotCommand('close_all', '🧹 Đóng tất cả vị thế (có xác nhận)'),
-    BotCommand('sync',      '🔄 Reconcile với OKX'),
-    BotCommand('dashboard', '🌐 Link web dashboard'),
+    BotCommand('menu',      '🎛 Bảng lệnh'),
+    BotCommand('web',       '🔐 Cấp mật khẩu web'),
     BotCommand('help',      '📖 Danh sách lệnh đầy đủ'),
+    BotCommand('dsquyen',   '🔑 Danh sách quyền'),
+    BotCommand('capquyen',  'Cấp quyền xem'),
+    BotCommand('thuquyen',  'Thu quyền xem'),
 ]
 
 
@@ -90,33 +77,12 @@ def build_app() -> Application:
 
     # ─── Commands ───
     h = app.add_handler
-    h(CommandHandler('start',        commands.cmd_start))
-    h(CommandHandler('help',         commands.cmd_help))
     h(CommandHandler('menu',         commands.cmd_menu))
-    h(CommandHandler('ping',         commands.cmd_ping))
-
-    h(CommandHandler('status',       commands.cmd_status))
-    h(CommandHandler('positions',    commands.cmd_positions))
-    h(CommandHandler('balance',      commands.cmd_balance))
-    h(CommandHandler('opps',         commands.cmd_opps))
-    h(CommandHandler('profit',       commands.cmd_profit))
-    h(CommandHandler('dashboard',    commands.cmd_dashboard))
-    h(CommandHandler('stats',        commands.cmd_stats))
-    h(CommandHandler('equity',       commands.cmd_equity))
-    h(CommandHandler('daily',        commands.cmd_daily))
-    h(CommandHandler('summary',      commands.cmd_summary))
-    h(CommandHandler('signals',      commands.cmd_signals))
-    h(CommandHandler('accuracy',     commands.cmd_accuracy))
-
-    h(CommandHandler('start_arb',    commands.cmd_start_arb))
-    h(CommandHandler('stop_arb',     commands.cmd_stop_arb))
-
-    h(CommandHandler('close',        commands.cmd_close))
-    h(CommandHandler('close_all',    commands.cmd_close_all))
-    h(CommandHandler('sync',         commands.cmd_sync))
-
-    # ─── Inline keyboard ───
-    h(CallbackQueryHandler(commands.cb_button))
+    h(CommandHandler('web',          commands.cmd_web))
+    h(CommandHandler('help',         commands.cmd_help))
+    h(CommandHandler('dsquyen',      commands.cmd_dsquyen))
+    h(CommandHandler('capquyen',     commands.cmd_capquyen))
+    h(CommandHandler('thuquyen',     commands.cmd_thuquyen))
 
     # ─── Scheduler ───
     jq = app.job_queue
